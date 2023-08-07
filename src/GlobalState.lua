@@ -510,4 +510,33 @@ function M.update_queue(update_entity)
   Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
 end
 
+function M.auto_network_chest(entity)
+  local requests = {}
+
+  -- scan surroundings for inserters. long-handed can be 2 away
+  local area = {
+      { entity.position.x - 2, entity.position.y - 2 },
+      { entity.position.x + 2, entity.position.y + 2 },
+    }
+  local entities = game.surfaces[1].find_entities_filtered{ area = area, type="inserter" }
+
+  for idx, ent in ipairs(entities) do
+    -- pickup from the chest, delivering elsewhere. scan target for ingredients list
+    if ent.pickup_target == entity then
+      if ent.drop_target ~= nil then
+        if ent.drop_target.type == "assembling-machine" then
+          local recipe = ent.drop_target.get_recipe()
+          if recipe ~= nil then
+            for _, xx in ipairs(recipe.ingredients) do
+              requests[xx.name] = xx.amount + (requests[xx.name] or 0)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  return requests
+end
+
 return M

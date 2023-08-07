@@ -20,6 +20,18 @@ M.event_handlers = {
     end,
   },
   {
+    name = UiConstants.AUTO_ITEM_BTN_NAME,
+    event = "on_gui_click",
+    handler = function(event, element)
+      local player = game.get_player(event.player_index)
+      if player == nil then
+        return
+      end
+
+      NetworkChestGui.Modal.try_to_auto(event.player_index)
+    end,
+  },
+  {
     name = UiConstants.MODAL_CHOOSE_TAKE_BTN_NAME,
     event = "on_gui_checked_state_changed",
     handler = function(event, element)

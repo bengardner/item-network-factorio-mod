@@ -417,8 +417,61 @@ local function request_list_sort(left, right)
   return left.sort_count < right.sort_count
 end
 
+local function add_request(requests, req_type, name, count)
+  for _, rr in ipairs(requests) do
+    if rr.type == req_type and rr.item == name then
+      if rr.buffer < count then
+        rr.buffer = count
+      end
+      return
+    end
+  end
+  table.insert(requests, {
+              type = req_type,
+              item = name,
+              buffer = count,
+              limit = 0,
+            })
+end
+
+local function auto_network_chest(info)
+  local entity = info.entity
+  --game.print(string.format("*** Auto name=%s type=%s pos=(%s,%s)",
+  --    entity.name, entity.type, entity.position.x, entity.position.y))
+  local requests = {}
+  local provides = {}
+
+  -- scan surroundings for inserters. long-handed can be 2 away
+  local area = {
+      { entity.position.x - 2, entity.position.y - 2 },
+      { entity.position.x + 2, entity.position.y + 2 },
+    }
+  local entities = game.surfaces[1].find_entities_filtered{ area = area, type="inserter" }
+
+  for idx, ent in ipairs(entities) do
+    -- pickup from the chest, delivering elsewhere. scan target for ingredients list
+    if ent.pickup_target == entity then
+      if ent.drop_target ~= nil then
+        if ent.drop_target.type == "assembling-machine" then
+          local recipe = ent.drop_target.get_recipe()
+          if recipe ~= nil then
+            for _, xx in ipairs(recipe.ingredients) do
+              requests[xx.name] = xx.amount + (requests[xx.name] or 0)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  for name, count in pairs(requests) do
+    add_request(info.requests, "take", name, count)
+  end
+end
 
 local function update_network_chest(info)
+  auto_network_chest(info)
+
   local inv = info.entity.get_output_inventory()
   local contents = inv.get_contents()
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED

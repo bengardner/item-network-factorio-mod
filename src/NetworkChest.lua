@@ -25,11 +25,20 @@ function M.on_create(event, entity)
   GlobalState.register_chest_entity(entity, requests)
 end
 
-local function generic_create_handler(event)
+local function log_entity(title, entity)
+  if entity.name == "entity-ghost" then
+    game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)", title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
+  else
+    game.print(string.format("%s: [%s] %s @ (%s,%s)", title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+  end
+end
+
+local function generic_create_handler(event, title)
   local entity = event.created_entity
   if entity == nil then
     entity = event.entity
   end
+  log_entity(title or "generic_create_handler", entity)
   if entity.name == "network-chest" then
     M.on_create(event, entity)
   elseif entity.name == "network-tank" then
@@ -49,17 +58,18 @@ local function generic_create_handler(event)
 end
 
 function M.on_built_entity(event)
-  generic_create_handler(event)
+  generic_create_handler(event, "on_built_entity")
 end
 
 function M.script_raised_built(event)
-  generic_create_handler(event)
+  generic_create_handler(event, "script_raised_built")
 end
 
 function M.on_entity_cloned(event)
   if event.source.name ~= event.destination.name then
     return
   end
+  log_entity("on_entity_cloned", event.destination)
   local name = event.source.name
   if name == "network-chest" then
     GlobalState.register_chest_entity(event.destination)
@@ -83,11 +93,11 @@ function M.on_entity_cloned(event)
 end
 
 function M.on_robot_built_entity(event)
-  generic_create_handler(event)
+  generic_create_handler(event, "on_robot_built_entity")
 end
 
 function M.script_raised_revive(event)
-  generic_create_handler(event)
+  generic_create_handler(event, "script_raised_revive")
 end
 
 function M.generic_destroy_handler(event, opts)

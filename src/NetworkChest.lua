@@ -164,21 +164,7 @@ function M.on_marked_for_deconstruction(event)
 end
 
 function M.on_post_entity_died(event)
-  --[[
-    ghost :: LuaEntity?
-    force :: LuaForce?
-    position :: MapPosition
-    prototype :: LuaEntityPrototype
-    damage_type :: LuaDamagePrototype?
-    corpses :: array[LuaEntity]
-    surface_index :: uint
-    unit_number :: uint?
-    name :: defines.events
-    tick :: uint
-  ]]
   if event.unit_number ~= nil then
-    --game.print(string.format("on_post_entity_died: [%s] %s", event.unit_number, event.prototype.name))
-
     GlobalState.logistic_del(event.unit_number)
 
     local original_entity = GlobalState.get_chest_info(event.unit_number)

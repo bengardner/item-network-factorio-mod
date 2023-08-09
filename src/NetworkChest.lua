@@ -155,7 +155,6 @@ function M.on_entity_died(event)
 end
 
 function M.on_marked_for_deconstruction(event)
-  log_entity("on_marked_for_deconstruction", event.entity)
   if event.entity.name == "network-chest" then
     GlobalState.put_chest_contents_in_network(event.entity)
   elseif event.entity.name == "network-tank" then
@@ -706,18 +705,23 @@ function M.onTick_60()
 end
 
 function M.handle_missing_material(entity, name)
-  if GlobalState.missing_transfer_get(entity.unit_number) ~= true then
+  -- did we already transfer something for this ghost/upgrade?
+  if GlobalState.alert_transfer_get(entity.unit_number) ~= true then
     -- We can only do something about entities in a network
+    -- REVISIT: assuming "player" force only
     local net = entity.surface.find_logistic_network_by_position(entity.position, "player")
     if net ~= nil then
       local network_count = GlobalState.get_item_count(name)
-      if network_count < 1 then
-        GlobalState.missing_item_set(name, entity.unit_number, 1)
-      else
+      if network_count > 0 then
         local n_inserted = net.insert({name=name, count=1})
         if n_inserted > 0 then
           GlobalState.set_item_count(name, network_count - 1)
-          GlobalState.missing_transfer_set(entity.unit_number)
+          GlobalState.alert_transfer_set(entity.unit_number)
+        end
+      else
+        -- FIXME: remove check after missing stuff is merged
+        if GlobalState.missing_item_set ~= nil then
+          GlobalState.missing_item_set(name, entity.unit_number, 1)
         end
       end
     end
@@ -725,8 +729,9 @@ function M.handle_missing_material(entity, name)
 end
 
 function M.check_alerts()
-  GlobalState.missing_transfer_cleanup()
+  GlobalState.alert_transfer_cleanup()
 
+  -- process all the alerts for all players
   for _, player in pairs(game.players) do
     local alerts = player.get_alerts{type=defines.alert_type.no_material_for_construction}
     for surface_idx, xxx in pairs(alerts) do
@@ -734,6 +739,7 @@ function M.check_alerts()
         for _, alert in ipairs(alert_array) do
           if alert.target ~= nil then
             local entity = alert.target
+            -- we only care about ghosts and items that are set to upgrade
             if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
               M.handle_missing_material(entity, entity.ghost_name)
             else

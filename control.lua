@@ -26,15 +26,21 @@ local function main()
   -- delete
   script.on_event(
     defines.events.on_pre_player_mined_item,
-    NetworkChest.generic_destroy_handler
+    function (event)
+      NetworkChest.generic_destroy_handler(event, nil, "on_pre_player_mined_item")
+    end
   )
   script.on_event(
     defines.events.on_robot_mined_entity,
-    NetworkChest.generic_destroy_handler
+    function (event)
+      NetworkChest.generic_destroy_handler(event, nil, "on_robot_mined_entity")
+    end
   )
   script.on_event(
     defines.events.script_raised_destroy,
-    NetworkChest.generic_destroy_handler
+    function (event)
+      NetworkChest.generic_destroy_handler(event, nil, "script_raised_destroy")
+    end
   )
   script.on_event(
     defines.events.on_entity_died,

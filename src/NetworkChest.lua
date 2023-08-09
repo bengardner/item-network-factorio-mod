@@ -25,11 +25,15 @@ function M.on_create(event, entity)
   GlobalState.register_chest_entity(entity, requests)
 end
 
+local debug_enabled = false
+
 local function log_entity(title, entity)
-  if entity.name == "entity-ghost" then
-    game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)", title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
-  else
-    game.print(string.format("%s: [%s] %s @ (%s,%s)", title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+  if debug_enabled then
+    if entity.name == "entity-ghost" then
+      game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)", title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
+    else
+      game.print(string.format("%s: [%s] %s @ (%s,%s)", title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+    end
   end
 end
 
@@ -100,7 +104,7 @@ function M.script_raised_revive(event)
   generic_create_handler(event, "script_raised_revive")
 end
 
-function M.generic_destroy_handler(event, opts)
+function M.generic_destroy_handler(event, opts, title)
   if opts == nil then
     opts = {}
   end
@@ -131,26 +135,27 @@ function M.generic_destroy_handler(event, opts)
 end
 
 function M.on_player_mined_entity(event)
-  M.generic_destroy_handler(event)
+  M.generic_destroy_handler(event, nil, "on_player_mined_entity")
 end
 
 function M.on_pre_player_mined_item(event)
-  M.generic_destroy_handler(event)
+  M.generic_destroy_handler(event, nil, "on_pre_player_mined_item")
 end
 
 function M.on_robot_mined_entity(event)
-  M.generic_destroy_handler(event)
+  M.generic_destroy_handler(event, nil, "on_robot_mined_entity")
 end
 
 function M.script_raised_destroy(event)
-  M.generic_destroy_handler(event)
+  M.generic_destroy_handler(event, nil, "script_raised_destroy")
 end
 
 function M.on_entity_died(event)
-  M.generic_destroy_handler(event, { do_not_delete_entity = true })
+  M.generic_destroy_handler(event, { do_not_delete_entity = true }, "on_entity_died")
 end
 
 function M.on_marked_for_deconstruction(event)
+  log_entity("on_marked_for_deconstruction", event.entity)
   if event.entity.name == "network-chest" then
     GlobalState.put_chest_contents_in_network(event.entity)
   elseif event.entity.name == "network-tank" then
@@ -159,7 +164,21 @@ function M.on_marked_for_deconstruction(event)
 end
 
 function M.on_post_entity_died(event)
+  --[[
+    ghost :: LuaEntity?
+    force :: LuaForce?
+    position :: MapPosition
+    prototype :: LuaEntityPrototype
+    damage_type :: LuaDamagePrototype?
+    corpses :: array[LuaEntity]
+    surface_index :: uint
+    unit_number :: uint?
+    name :: defines.events
+    tick :: uint
+  ]]
   if event.unit_number ~= nil then
+    --game.print(string.format("on_post_entity_died: [%s] %s", event.unit_number, event.prototype.name))
+
     GlobalState.logistic_del(event.unit_number)
 
     local original_entity = GlobalState.get_chest_info(event.unit_number)

@@ -43,6 +43,9 @@ function M.inner_setup()
   if global.mod.missing_fluid == nil then
     global.mod.missing_fluid = {} -- missing_fluid[key][unit_number] = { game.tick, count }
   end
+  if global.mod.missing_trans == nil then
+    global.mod.missing_trans = {} -- missing_trans[unit_number] = game.tick
+  end
   if global.mod.tanks == nil then
     global.mod.tanks = {}
   end
@@ -161,6 +164,32 @@ end
 -- returns the (read-only) table of missing items
 function M.missing_fluid_filter()
   return missing_filter(global.mod.missing_fluid)
+end
+
+-- this tracks that we already transferred an item for the request
+function M.missing_transfer_set(unit_number)
+  global.mod.missing_trans[unit_number] = game.tick
+end
+
+-- get whether we have already transferred for this alert
+-- the item won't necessarily go where we want it
+function M.missing_transfer_get(unit_number)
+  return global.mod.missing_trans[unit_number] ~= nil
+end
+
+-- throw out stale entries, allowing another transfer
+function M.missing_transfer_cleanup()
+  local max_delta = constants.MAX_MISSING_TICKS
+  local now = game.tick
+  local to_del = {}
+  for unum, tick in pairs(global.mod.missing_trans) do
+    if now - tick > max_delta then
+      table.insert(to_del, unum)
+    end
+  end
+  for _, unum in ipairs(to_del) do
+    global.mod.missing_trans[unum] = nil
+  end
 end
 
 function M.remove_old_ui()

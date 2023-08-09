@@ -695,6 +695,55 @@ function M.onTick()
   M.update_queue()
 end
 
+function M.onTick_60()
+  M.updatePlayers()
+  M.check_alerts()
+end
+
+function M.handle_missing_material(entity, name)
+  if GlobalState.missing_transfer_get(entity.unit_number) ~= true then
+    -- We can only do something about entities in a network
+    local net = entity.surface.find_logistic_network_by_position(entity.position, "player")
+    if net ~= nil then
+      local network_count = GlobalState.get_item_count(name)
+      if network_count < 1 then
+        GlobalState.missing_item_set(name, entity.unit_number, 1)
+      else
+        local n_inserted = net.insert({name=name, count=1})
+        if n_inserted > 0 then
+          GlobalState.set_item_count(name, network_count - 1)
+          GlobalState.missing_transfer_set(entity.unit_number)
+        end
+      end
+    end
+  end
+end
+
+function M.check_alerts()
+  GlobalState.missing_transfer_cleanup()
+
+  for _, player in pairs(game.players) do
+    local alerts = player.get_alerts{type=defines.alert_type.no_material_for_construction}
+    for surface_idx, xxx in pairs(alerts) do
+      for alert_type, alert_array in pairs(xxx) do
+        for _, alert in ipairs(alert_array) do
+          if alert.target ~= nil then
+            local entity = alert.target
+            if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
+              M.handle_missing_material(entity, entity.ghost_name)
+            else
+              local tent = entity.get_upgrade_target()
+              if tent ~= nil then
+                M.handle_missing_material(entity, tent.name)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
 -------------------------------------------
 -- GUI Section
 -------------------------------------------

@@ -176,7 +176,7 @@ function M.remove_old_ui()
         main_frame.destroy()
       end
 
-      local main_frame = player.gui.screen["add-request"]
+      main_frame = player.gui.screen["add-request"]
       if main_frame ~= nil then
         main_frame.destroy()
       end
@@ -489,9 +489,7 @@ function M.update_queue(update_entity)
       return M.UPDATE_STATUS.ALREADY_UPDATED
     end
     updated_entities[unit_number] = true
-
-    status = update_entity(unit_number)
-    return status
+    return update_entity(unit_number)
   end
 
   for _ = 1, MAX_ENTITIES_TO_UPDATE do
@@ -501,7 +499,10 @@ function M.update_queue(update_entity)
     end
 
     local status = inner_update_entity(unit_number)
-    if status == M.UPDATE_STATUS.NOT_UPDATED or status == M.UPDATE_STATUS.UPDATED or status == M.UPDATE_STATUS.ALREADY_UPDATED then
+    if status == M.UPDATE_STATUS.NOT_UPDATED or
+       status == M.UPDATE_STATUS.UPDATED or
+       status == M.UPDATE_STATUS.ALREADY_UPDATED
+    then
       Queue.push(global.mod.scan_queue, unit_number)
     end
   end
@@ -520,7 +521,7 @@ function M.auto_network_chest(entity)
     }
   local entities = game.surfaces[1].find_entities_filtered{ area = area, type="inserter" }
 
-  for idx, ent in ipairs(entities) do
+  for _, ent in ipairs(entities) do
     -- pickup from the chest, delivering elsewhere. scan target for ingredients list
     if ent.pickup_target == entity then
       if ent.drop_target ~= nil then

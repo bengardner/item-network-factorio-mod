@@ -4,7 +4,6 @@ local UiHandlers = require "src.UiHandlers"
 local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
-local constants = require "src.constants"
 
 local M = {}
 
@@ -30,9 +29,11 @@ local debug_enabled = false
 local function log_entity(title, entity)
   if debug_enabled then
     if entity.name == "entity-ghost" then
-      game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)", title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
+      game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)",
+        title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
     else
-      game.print(string.format("%s: [%s] %s @ (%s,%s)", title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+      game.print(string.format("%s: [%s] %s @ (%s,%s)",
+        title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
     end
   end
 end
@@ -118,7 +119,9 @@ function M.generic_destroy_handler(event, opts, title)
     if not opts.do_not_delete_entity then
       GlobalState.delete_chest_entity(entity.unit_number)
     end
-    if global.mod.network_chest_gui ~= nil and global.mod.network_chest_gui.entity.unit_number == entity.unit_number then
+    if global.mod.network_chest_gui ~= nil and
+       global.mod.network_chest_gui.entity.unit_number == entity.unit_number
+    then
       global.mod.network_chest_gui.frame.destroy()
       global.mod.network_chest_gui = nil
     end
@@ -439,7 +442,7 @@ local function auto_network_chest(info)
   --game.print(string.format("*** Auto name=%s type=%s pos=(%s,%s)",
   --    entity.name, entity.type, entity.position.x, entity.position.y))
   local requests = {}
-  local provides = {}
+  --local provides = {}
 
   -- scan surroundings for inserters. long-handed can be 2 away
   local area = {
@@ -448,7 +451,7 @@ local function auto_network_chest(info)
     }
   local entities = game.surfaces[1].find_entities_filtered{ area = area, type="inserter" }
 
-  for idx, ent in ipairs(entities) do
+  for _, ent in ipairs(entities) do
     -- pickup from the chest, delivering elsewhere. scan target for ingredients list
     if ent.pickup_target == entity then
       if ent.drop_target ~= nil then
@@ -787,8 +790,8 @@ function M.check_alerts()
   -- process all the alerts for all players
   for _, player in pairs(game.players) do
     local alerts = player.get_alerts{type=defines.alert_type.no_material_for_construction}
-    for surface_idx, xxx in pairs(alerts) do
-      for alert_type, alert_array in pairs(xxx) do
+    for _, xxx in pairs(alerts) do
+      for _, alert_array in pairs(xxx) do
         for _, alert in ipairs(alert_array) do
           if alert.target ~= nil then
             local entity = alert.target

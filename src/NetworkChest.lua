@@ -710,7 +710,7 @@ function M.handle_missing_material(entity, name)
     -- We can only do something about entities in a network
     -- REVISIT: assuming "player" force only
     local net = entity.surface.find_logistic_network_by_position(entity.position, "player")
-    if net ~= nil then
+    if net ~= nil and net.available_construction_robots > 0 then
       local network_count = GlobalState.get_item_count(name)
       if network_count > 0 then
         local n_inserted = net.insert({name=name, count=1})

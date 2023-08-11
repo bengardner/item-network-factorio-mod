@@ -101,11 +101,15 @@ end
 
 function M.get_default_limits()
   local limits = {}
-  -- check recipes
-  for _, prot in pairs(game.recipe_prototypes) do
-
-  end
+  -- check recipes ?
+  --for _, prot in pairs(game.recipe_prototypes) do
+  --
+  --end
   return limits
+end
+
+function M.get_limits()
+  return global.mod.item_limits
 end
 
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }
@@ -191,7 +195,7 @@ function M.remove_old_ui()
         main_frame.destroy()
       end
 
-      main_frame = player.gui.screen["add-request"]
+      local main_frame = player.gui.screen["add-request"]
       if main_frame ~= nil then
         main_frame.destroy()
       end

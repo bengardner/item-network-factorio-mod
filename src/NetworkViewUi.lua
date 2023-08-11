@@ -17,12 +17,15 @@ local function build_item_page(parent)
 end
 
 function M.open_main_frame(player_index)
+  -- if we already have a GUI open, then close it and return
+  -- this allows toggling the GUI using the hot key combo
   local ui = GlobalState.get_ui_state(player_index)
   if ui.net_view ~= nil then
     M.destroy(player_index)
     return
   end
 
+  -- Get the current player, who might have just quit.
   local player = game.get_player(player_index)
   if player == nil then
     return
@@ -37,7 +40,7 @@ function M.open_main_frame(player_index)
   +--------------------------------------------------+
   | Network View ||||||||||||||||||||||||||||| [R][X]|
   +--------------------------------------------------+
-  | Items | Fluids | Shortages |                     | <- tabs
+  | Items | Fluids | Shortages | Limits |            | <- tabs
   +--------------------------------------------------+
   | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] | <- content
     ... repeated ...
@@ -67,6 +70,7 @@ function M.open_main_frame(player_index)
     direction = "vertical",
   })
 
+  -- sigh. This looks right, but isn't draggable.
   local header_flow = main_flow.add({
     type = "flow",
     direction = "horizontal",
@@ -85,6 +89,24 @@ function M.open_main_frame(player_index)
     ignored_by_interaction = true,
     style = "flib_titlebar_drag_handle"
   }
+
+  local search_enabled = false
+  if search_enabled then
+    header_flow.add{
+      type = "textfield",
+      style = "titlebar_search_textfield",
+    }
+
+    header_flow.add{
+      type = "sprite-button",
+      sprite = 'utility/search_white',
+      hovered_sprite = 'utility/search_black',
+      clicked_sprite = 'utility/search_black',
+      style = "frame_action_button",
+      tooltip = { "gui.search" },
+      tags = { event = UiConstants.NV_SEARCH_BTN },
+    }
+  end
 
   header_flow.add{
     type = "sprite-button",
@@ -112,10 +134,14 @@ function M.open_main_frame(player_index)
   local tab_item = tabbed_pane.add{type="tab", caption="Items"}
   local tab_fluid = tabbed_pane.add{type="tab", caption="Fluids"}
   local tab_shortage = tabbed_pane.add{type="tab", caption="Shortages"}
+  local tab_limits = tabbed_pane.add{type="tab", caption="Limits"}
 
   tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
+
+  -- FIXME: "limits" should use a different layout
+  tabbed_pane.add_tab(tab_limits, build_item_page(tabbed_pane, false))
 
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1
@@ -133,8 +159,10 @@ local tab_idx_to_view_type = {
   "item",
   "fluid",
   "shortage",
+  "limits",
 }
 
+-- This is the main entry point for showing stuff
 function M.update_items(player_index)
   local ui = GlobalState.get_ui_state(player_index)
   local net_view = ui.net_view
@@ -149,12 +177,25 @@ function M.update_items(player_index)
     return
   end
 
+  -- destroy existing item display, if any
   local item_flow = main_flow[UiConstants.NV_ITEM_FLOW]
   if item_flow ~= nil then
     item_flow.destroy()
   end
 
-  item_flow = main_flow.add({
+  game.print(string.format("update_items: %s", net_view.view_type))
+
+  -- REVISIT: this would be where we branch off for the "limits" tab
+  if net_view.view_type == "limits" then
+    M.render_tab_limits(main_flow)
+  else
+    M.render_tab_items_fluids_shortages(main_flow, net_view.view_type)
+  end
+end
+
+function M.render_tab_items_fluids_shortages(main_flow, view_type)
+  -- create the item grid display
+  local item_flow = main_flow.add({
     type = "scroll-pane",
     direction = "vertical",
     name = UiConstants.NV_ITEM_FLOW,
@@ -162,7 +203,7 @@ function M.update_items(player_index)
   })
   item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
 
-  local rows = M.get_rows_of_items(net_view.view_type)
+  local rows = M.get_rows_of_items(view_type)
   for _, row in ipairs(rows) do
     local item_h_stack = item_flow.add({
       type = "flow",
@@ -171,8 +212,8 @@ function M.update_items(player_index)
     for _, item in ipairs(row) do
       local item_name
       local tooltip
-      local sprite_path = net_view.view_type
-      if sprite_path == "shortage" then
+      local sprite_path = view_type
+      if sprite_path == "shortage" or sprite_path == "limits" then
         if item.temp ~= nil then
           sprite_path = "fluid"
         else
@@ -195,12 +236,128 @@ function M.update_items(player_index)
       end
       local item_view = item_h_stack.add({
         type = "sprite-button",
-        elem_type = net_view.view_type,
+        elem_type = view_type,
         sprite = sprite_path .. "/" .. item.item,
         tooltip = tooltip,
       })
       item_view.number = item.count
     end
+  end
+end
+
+local function table_count(tab)
+  local cnt = 0
+  for _, _ in pairs(tab) do
+    cnt = cnt + 1
+  end
+  return cnt
+end
+
+function M.get_limit_items()
+  local limits = GlobalState.get_limits()
+  local items = GlobalState.get_items()
+
+  game.print(string.format("get_limit_items: items=%s limits=%s", table_count(items), table_count(limits)))
+
+  -- default to "infinity" for anything in the network without a limit
+  for name, _ in pairs(items) do
+    if limits[name] == nil then
+      limits[name] = 2000000000 -- 2 billion means infinite ?
+      game.print(string.format("added limit for %s %s", name, limits[name]))
+    else
+      game.print(string.format("have limit for %s %s", name, limits[name]))
+    end
+  end
+  return limits
+end
+
+local function find_sprite_path(name)
+  for _, pfx in ipairs({"item", "fluid"}) do
+    local tmp = string.format("%s/%s", pfx, name)
+    if game.is_valid_sprite_path(tmp) then
+      return tmp
+    end
+  end
+  return "item/item-unknown"
+end
+
+local function startswith(text, prefix)
+  return text:find(prefix, 1, true) == 1
+end
+
+function M.render_tab_limits(main_flow)
+  -- create the item grid display
+  local item_flow = main_flow.add({
+    type = "scroll-pane",
+    direction = "vertical",
+    name = UiConstants.NV_ITEM_FLOW,
+    vertical_scroll_policy = "always",
+  })
+  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+
+  --[[
+    Strategy: anything in the network appears in the list. If there is no limit, then show infinity.
+    Any item/liquid that has a limit will have an icon.
+    Show one row of blank boxes that can be clicked to bring up an item selection window with a limit bar on the bottom.
+  ]]
+
+  local rows = M.get_rows_of_items("limits")
+  for _, row in ipairs(rows) do
+    local item_h_stack = item_flow.add({
+      type = "flow",
+      direction = "horizontal",
+    })
+    for _, item in ipairs(row) do
+      local item_name
+      local elem_type
+      local tooltip
+      local sprite_path = find_sprite_path(item.item)
+
+      if startswith(sprite_path, "item") then
+        item_name = game.item_prototypes[item.item].localised_name
+        tooltip = { "", item_name, ": ", item.count }
+        elem_type = "item"
+      else
+        item_name = game.fluid_prototypes[item.item].localised_name
+        elem_type = "fluid"
+        tooltip = {
+          "",
+          item_name,
+          ": ",
+          string.format("%.0f", item.count),
+          " at ",
+          { "format-degrees-c", string.format("%.0f", item.temp) },
+        }
+      end
+
+      local item_view = item_h_stack.add({
+        type = "sprite-button",
+        elem_type = elem_type,
+        sprite = sprite_path,
+        tooltip = tooltip,
+      })
+      item_view.number = item.count
+    end
+      -- TODO: fill the rest with blanks
+  end
+  -- add one blank row
+  local item_h_stack = item_flow.add({
+    type = "flow",
+    direction = "horizontal",
+  })
+
+  for _ = 1, 8 do
+    item_h_stack.add{
+      type = "choose-elem-button",
+      elem_type = "item",
+      --elem_filters = { filter= },
+      sprite = 'utility/slot',
+      --hovered_sprite = 'utility/slot',
+      --clicked_sprite = 'utility/slot',
+      --style = "choose-elem-button",
+      --tooltip = { "gui.search" },
+      --tags = { event = UiConstants.NV_SEARCH_BTN },
+    }
   end
 end
 
@@ -238,6 +395,13 @@ function M.get_list_of_items(view_type)
       local fluid_name, temp = GlobalState.fluid_temp_key_decode(fluid_key)
       table.insert(items, { item = fluid_name, count = count, temp = temp })
     end
+  elseif view_type == "limits" then
+
+    for item_name, count in pairs(M.get_limit_items()) do
+      table.insert(items, { item = item_name, count = count })
+      game.print(string.format("limit %s %s", item_name, count))
+    end
+    game.print(string.format("Found %s limit items", #items))
   end
 
   table.sort(items, items_list_sort)

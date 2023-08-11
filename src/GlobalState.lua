@@ -1,6 +1,8 @@
 local Queue = require "src.Queue"
 local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
+local tables_have_same_counts = require("src.tables_have_same_keys")
+  .tables_have_same_counts
 local constants = require "src.constants"
 
 local M = {}
@@ -91,6 +93,19 @@ function M.inner_setup()
     end
     global.mod.has_run_fluid_temp_conversion = true
   end
+
+  if global.mod.item_limits == nil then
+    global.mod.item_limits = M.get_default_limits()
+  end
+end
+
+function M.get_default_limits()
+  local limits = {}
+  -- check recipes
+  for _, prot in pairs(game.recipe_prototypes) do
+
+  end
+  return limits
 end
 
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }
@@ -324,16 +339,21 @@ function M.delete_chest_entity(unit_number)
   global.mod.chests[unit_number] = nil
 end
 
-function M.put_chest_contents_in_network(entity)
-  local inv = entity.get_output_inventory()
-
+function M.put_inventory_in_network(inv, status)
+  status = status or M.UPDATE_STATUS.NOT_UPDATED
   if inv ~= nil then
     local contents = inv.get_contents()
     for item, count in pairs(contents) do
       M.increment_item_count(item, count)
+      status = M.UPDATE_STATUS.UPDATED
     end
     inv.clear()
   end
+  return status
+end
+
+function M.put_chest_contents_in_network(entity)
+  M.put_inventory_in_network(entity.get_output_inventory())
 end
 
 function M.register_tank_entity(entity, config)
@@ -383,10 +403,12 @@ end
 
 function M.set_chest_requests(unit_number, requests)
   local info = M.get_chest_info(unit_number)
-  if info == nil then
-    return
+  if info ~= nil then
+    if not tables_have_same_counts(requests, info.requests) then
+      info.requests = requests
+      info.last_contents = nil
+    end
   end
-  global.mod.chests[unit_number].requests = requests
 end
 
 function M.get_item_count(item_name)
@@ -511,33 +533,96 @@ function M.update_queue(update_entity)
   Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
 end
 
+function M.log_entity(title, entity)
+  if entity ~= nil then
+    if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
+      game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)",
+        title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
+    else
+      game.print(string.format("%s: [%s] %s @ (%s,%s)",
+        title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+    end
+  end
+end
+
+
+--[[
+Automatically configure a chest to request ingredients needed for linked assemblers.
+        local buffer_size = settings.global
+          ["item-network-stack-size-on-assembler-paste"].value
+
+]]
 function M.auto_network_chest(entity)
   local requests = {}
+  local provides = {}
 
-  -- scan surroundings for inserters. long-handed can be 2 away
-  local area = {
-      { entity.position.x - 2, entity.position.y - 2 },
-      { entity.position.x + 2, entity.position.y + 2 },
-    }
-  local entities = game.surfaces[1].find_entities_filtered{ area = area, type="inserter" }
+  local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
+
+  M.log_entity("auto-scan", entity)
+
+  -- scan surroundings for inserters. long-handed inserter can be 2 away
+  local entities = entity.surface.find_entities_filtered{ position=entity.position, radius=2, type="inserter" }
+
+  -- NOTE: is seems like the inserter doesn't set pickup_target or drop_target until it needs to
+
+  local function log_entities_at(title, pos, exclude_ent)
+    local nn = entity.surface.find_entities_filtered{ position=pos, radius=0.1 }
+    for _, ent in ipairs(nn) do
+      if ent ~= exclude_ent then
+        M.log_entity(title, ent)
+      end
+    end
+  end
 
   for _, ent in ipairs(entities) do
-    -- pickup from the chest, delivering elsewhere. scan target for ingredients list
+    M.log_entity("auto-check", ent)
+    game.print(string.format("  pick=(%s,%s) drop=(%s,%s)",
+      ent.pickup_position.x, ent.pickup_position.y,
+      ent.drop_position.x, ent.drop_position.y))
+    log_entities_at(" - pick", ent.pickup_position, ent)
+    log_entities_at(" - drop", ent.drop_position, ent)
+    M.log_entity("auto-check-pick", ent.pickup_target)
+    M.log_entity("auto-check-drop", ent.drop_target)
+
+    -- pickup from the chest, delivering elsewhere. scan target recipe for 'ingredients'
     if ent.pickup_target == entity then
       if ent.drop_target ~= nil then
         if ent.drop_target.type == "assembling-machine" then
           local recipe = ent.drop_target.get_recipe()
           if recipe ~= nil then
             for _, xx in ipairs(recipe.ingredients) do
-              requests[xx.name] = xx.amount + (requests[xx.name] or 0)
+              -- We don't actually care about the ingredient count, as the inserter can only hold so
+              -- many and the chest should be refilled before the inserter is finished.
+              -- and it will be auto-adjusted
+              requests[xx.name] = (requests[xx.name] or 0) + buffer_size
             end
           end
         end
+
+        -- REVISIT: other types? furnace? at least we can add coal
+      end
+    end
+
+    -- drop in the chest, pick up from elsewhere. scan target recipe for 'products'
+    if ent.drop_target == entity then
+      if ent.pickup_target ~= nil then
+        if ent.pickup_target.type == "assembling-machine" then
+          local recipe = ent.pickup_target.get_recipe()
+          if recipe ~= nil then
+            for _, xx in ipairs(recipe.products) do
+              provides[xx.name] = xx.amount + (provides[xx.name] or 0)
+            end
+          end
+        end
+
+        -- REVISIT: other types? furnace?
       end
     end
   end
 
-  return requests
+  -- REVISIT: do we need to scan for loaders?
+
+  return requests, provides
 end
 
 return M

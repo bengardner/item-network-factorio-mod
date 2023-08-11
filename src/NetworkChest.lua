@@ -4,6 +4,8 @@ local UiHandlers = require "src.UiHandlers"
 local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
+local tables_have_same_counts = require("src.tables_have_same_keys")
+  .tables_have_same_counts
 
 local M = {}
 
@@ -131,6 +133,7 @@ function M.generic_destroy_handler(event, opts, title)
       GlobalState.delete_tank_entity(entity.unit_number)
     end
   elseif GlobalState.is_logistic_entity(entity.name) then
+    GlobalState.put_chest_contents_in_network(entity)
     GlobalState.logistic_del(entity.unit_number)
   elseif GlobalState.is_vehicle_entity(entity.name) then
     GlobalState.vehicle_del(entity.unit_number)
@@ -299,13 +302,34 @@ function M.on_entity_settings_pasted(event)
   end
 end
 
-function M.trash_to_network(trash_inv)
-  if trash_inv ~= nil then
-    for name, count in pairs(trash_inv.get_contents()) do
-      GlobalState.increment_item_count(name, count)
+-- fulfill requests. entity must have request_slot_count and get_request_slot()
+-- useful for vehicles (spidertron) and logistic containers
+function M.inventory_handle_requests(entity, inv, old_status)
+  local status = old_status or GlobalState.UPDATE_STATUS.NOT_UPDATED
+  if entity ~= nil and inv ~= nil and entity.request_slot_count > 0 then
+    local contents = inv.get_contents()
+
+    for slot = 1, entity.request_slot_count do
+      local req = entity.get_request_slot(slot)
+      if req ~= nil and req.name ~= nil then
+        local current_count = contents[req.name] or 0
+        local network_count = GlobalState.get_item_count(req.name)
+        local n_wanted = math.max(0, req.count - current_count)
+        local n_transfer = math.min(network_count, n_wanted)
+        if n_transfer > 0 then
+          local n_inserted = inv.insert { name = req.name, count = n_transfer }
+          if n_inserted > 0 then
+            GlobalState.set_item_count(req.name, network_count - n_inserted)
+            status = GlobalState.UPDATE_STATUS.UPDATED
+          end
+        end
+        if n_transfer < n_wanted then
+          GlobalState.missing_item_set(req.name, entity.unit_number, n_wanted - n_transfer)
+        end
+      end
     end
-    trash_inv.clear()
   end
+  return status
 end
 
 function M.updatePlayers()
@@ -319,7 +343,7 @@ function M.updatePlayers()
 
     if enable_trash then
       -- put all trash into network
-      M.trash_to_network(player.get_inventory(defines.inventory.character_trash))
+      GlobalState.put_inventory_in_network(player.get_inventory(defines.inventory.character_trash))
 
       -- get contents of player inventory
       local main_inv = player.get_inventory(defines.inventory.character_main)
@@ -360,37 +384,11 @@ function M.updatePlayers()
 end
 
 function M.update_vehicle(entity, inv_trash, inv_trunk)
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
-
   -- move trash to the item network
-  M.trash_to_network(inv_trash)
+  local status = GlobalState.put_inventory_in_network(inv_trash)
 
   -- fulfill reqeusts
-  if inv_trunk == nil or entity.request_slot_count < 1 then
-    return status
-  end
-
-  local contents = inv_trunk.get_contents()
-  for slot = 1, entity.request_slot_count do
-    local req = entity.get_request_slot(slot)
-    if req ~= nil then
-      local current_count = contents[req.name] or 0
-      local network_count = GlobalState.get_item_count(req.name)
-      local n_wanted = math.max(0, req.count - current_count)
-      local n_transfer = math.min(network_count, n_wanted)
-      if n_transfer > 0 then
-        local n_inserted = inv_trunk.insert{name=req.name, count=n_transfer}
-        if n_inserted > 0 then
-          GlobalState.set_item_count(req.name, network_count - n_inserted)
-          status = GlobalState.UPDATE_STATUS.UPDATED
-        end
-      end
-      if n_transfer < n_wanted then
-        GlobalState.missing_item_set(req.name, entity.unit_number, n_wanted - n_transfer)
-      end
-    end
-  end
-  return status
+  return M.inventory_handle_requests(entity, inv_trunk, status)
 end
 
 function M.vehicle_update_entity(entity)
@@ -473,8 +471,6 @@ local function auto_network_chest(info)
 end
 
 local function update_network_chest(info)
-  auto_network_chest(info)
-
   local inv = info.entity.get_output_inventory()
   local contents = inv.get_contents()
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
@@ -560,6 +556,121 @@ local function update_network_chest(info)
     end
   end
   inv.set_bar(bar_idx)
+
+  -- put additional items into network
+  for item, count in pairs(contents) do
+    assert(count >= 0)
+    if count > 0 then
+      GlobalState.increment_item_count(item, count)
+    end
+  end
+
+  return status
+end
+
+local function update_network_chest_new(info)
+  --[[
+  if contents > buffer then send to network
+
+  ]]
+  local inv = info.entity.get_output_inventory()
+  local contents = inv.get_contents()
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+
+  -- reset inventory
+  inv.clear()
+  inv.set_bar()
+  for idx = 1, #inv do
+    inv.set_filter(idx, nil)
+  end
+
+  -- if the chest is not configured, then it is a black hole, eating everything
+  if #info.requests > 0 then
+    -- make transfers with network
+    for _, request in ipairs(info.requests) do
+      local current_count = contents[request.item] or 0
+      local network_count = GlobalState.get_item_count(request.item)
+      if request.type == "take" then
+        -- Fill the buffer, leaving "limit" items in the network.
+        local n_take = math.max(0, request.buffer - current_count) -- the number we want
+        local n_give = math.max(0, network_count - request.limit)  -- the number the network can provide
+        local n_transfer = math.min(n_take, n_give)
+        if n_transfer > 0 then
+          status = GlobalState.UPDATE_STATUS.UPDATED
+          contents[request.item] = current_count + n_transfer
+          GlobalState.set_item_count(request.item, network_count - n_transfer)
+          -- if we transferred a full buffer and there is enough for another
+          -- in the network, then the bottleneck might be in the request buffer,
+          -- so up it by 1.
+          if n_transfer == request.buffer and network_count > (2 * request.buffer) then
+            request.buffer = request.buffer + 1
+          end
+          if n_take > n_transfer then
+            GlobalState.missing_item_set(request.item, info.entity.unit_number, n_take - n_transfer)
+          end
+        else
+          GlobalState.missing_item_set(request.item, info.entity.unit_number, n_take)
+        end
+      else
+        -- "provide": keep buffer, send the rest to the network, up to limit (limit=-1 is infinite)
+        if request.buffer > 0 then
+          local n_give = current_count - request.buffer
+          local n_take = math.max(0, request.limit - network_count)
+          local n_transfer = math.min(n_take, n_give)
+          if n_transfer > 0 then
+            status = GlobalState.UPDATE_STATUS.UPDATED
+            contents[request.item] = current_count - n_transfer
+            GlobalState.set_item_count(request.item, network_count + n_transfer)
+          end
+        end
+      end
+    end
+
+    -- get new sorted requests
+    local requests = {}
+    for _, request in ipairs(info.requests) do
+      local stack_size = game.item_prototypes[request.item].stack_size
+      local n_slots = math.ceil(request.buffer / stack_size)
+      local n_max = n_slots * stack_size
+      local old_count = contents[request.item] or 0
+      local new_count = math.min(n_max, old_count)
+      contents[request.item] = old_count - new_count
+      table.insert(requests, {
+        item = request.item,
+        sort_count = new_count - request.buffer,
+        buffer = request.buffer,
+        stack_size = stack_size,
+        count = new_count,
+        n_slots = n_slots,
+      })
+    end
+    table.sort(requests, request_list_sort)
+
+
+    -- flatten sorted requests into slots
+    local slot_idx = 1
+    local bar_idx = 1
+    for _, request in ipairs(requests) do
+      local count = request.count
+      for _ = 1, request.n_slots do
+        inv.set_filter(slot_idx, request.item)
+        if count > 0 then
+          local count_for_current_slot = math.min(count, request.stack_size)
+          count = count - count_for_current_slot
+          local inserted = inv.insert({
+            name = request.item,
+            count = count_for_current_slot,
+          })
+          assert(inserted == count_for_current_slot)
+        end
+        if request.count < request.buffer then
+          bar_idx = bar_idx + 1
+        end
+        slot_idx = slot_idx + 1
+      end
+    end
+    inv.set_bar(bar_idx)
+  end
 
   -- put additional items into network
   for item, count in pairs(contents) do
@@ -721,33 +832,7 @@ function M.logistic_update_entity(entity)
 
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
 
-  -- need a request to do anything
-  if entity.request_slot_count > 0 then
-    local inv = entity.get_output_inventory()
-    local contents = inv.get_contents()
-
-    for slot = 1, entity.request_slot_count do
-      local req = entity.get_request_slot(slot)
-      if req ~= nil then
-        local current_count = contents[req.name] or 0
-        local network_count = GlobalState.get_item_count(req.name)
-        local n_wanted = math.max(0, req.count - current_count)
-        local n_transfer = math.min(network_count, n_wanted)
-        if n_transfer > 0 then
-          local n_inserted = inv.insert { name = req.name, count = n_transfer }
-          if n_inserted > 0 then
-            GlobalState.set_item_count(req.name, network_count - n_inserted)
-            status = GlobalState.UPDATE_STATUS.UPDATED
-          end
-        end
-        if n_transfer < n_wanted then
-          GlobalState.missing_item_set(req.name, entity.unit_number,
-            n_wanted - n_transfer)
-        end
-      end
-    end
-  end
-  return status
+  return M.inventory_handle_requests(entity, entity.get_output_inventory(), status)
 end
 
 function M.onTick()

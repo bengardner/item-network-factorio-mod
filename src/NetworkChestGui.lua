@@ -463,9 +463,22 @@ function Modal.try_to_auto(player_index)
     entity.position.x, entity.position.y))
 
   -- we only deal with requests/takes right now
-  local auto_req = GlobalState.auto_network_chest(entity)
+  local auto_request, auto_provide = GlobalState.auto_network_chest(entity)
+  if auto_request ~= nil and next(auto_request) ~= nil then
+    game.print("AUTO Requests")
+    for name, count in pairs(auto_request) do
+      game.print(string.format("  %s %s", name, count))
+    end
+  end
+  if auto_provide ~= nil and next(auto_provide) ~= nil then
+    game.print("AUTO Provide")
+    for name, count in pairs(auto_provide) do
+      game.print(string.format("  %s %s", name, count))
+    end
+  end
+
   local chest_req = {}
-  for item_name, item_count in pairs(auto_req) do
+  for item_name, item_count in pairs(auto_request) do
     table.insert(chest_req, {
       type = "take",
       item = item_name,

@@ -848,11 +848,17 @@ end
 -- try to send the item named @name to the network @net for @entity
 local function try_to_send_to_net(net, name, entity)
   if net ~= nil and net.available_construction_robots > 0 then
-    local n_inserted = net.insert({name=name, count=1})
-    if n_inserted > 0 then
-      GlobalState.increment_item_count(name, -1)
-      GlobalState.alert_transfer_set(entity.unit_number)
-      return true
+    for _, cell in ipairs(net.cells) do
+      if cell.stationed_construction_robot_count > 0 and
+         cell.is_in_construction_range(entity.position)
+      then
+        local n_inserted = net.insert({name=name, count=1})
+        if n_inserted > 0 then
+          GlobalState.increment_item_count(name, -1)
+          GlobalState.alert_transfer_set(entity.unit_number)
+          return true
+        end
+      end
     end
   end
   return false
@@ -872,25 +878,35 @@ function M.handle_missing_material(player, entity, name)
   end
 
   -- Find the land-based network that covers this position
-  -- alt: entity.surface.find_logistic_networks_by_construction_area(entity.position, "player")
-  local net = entity.surface.find_logistic_network_by_position(entity.position, "player")
-  if try_to_send_to_net(net, name, entity) then
-    --game.print(string.format("Sent %s to net", name))
-    return
+  local nets = entity.surface.find_logistic_networks_by_construction_area(entity.position, "player")
+  for _, net in ipairs(nets) do
+    if try_to_send_to_net(net, name, entity) then
+      GlobalState.log_entity("Sent to net", entity)
+      return
+    end
   end
 
-  -- no love. Try the character network for the player that got the alert.
+  --  Try the character network for the player that got the alert.
   if player.character ~= nil and player.character.logistic_network ~= nil then
-    net = player.character.logistic_network
-    -- if we can satisfy this request, then don't send (bad idea?)
-    -- make sure at least one cell is within range
-    for _, cell in ipairs(net.cells) do
-      if cell.is_in_construction_range(entity.position) then
-        if try_to_send_to_net(player.character.logistic_network, name, entity) then
-          game.print(string.format("Sent %s to char net", name))
-          return
-        end
-      end
+    if try_to_send_to_net(player.character.logistic_network, name, entity) then
+      GlobalState.log_entity("Sent to char", entity)
+      return
+    end
+  end
+
+  -- try any "associated" characters (might be a dup from above, not sure)
+  for _, char in ipairs(player.get_associated_characters()) do
+    if try_to_send_to_net(char.logistic_network, name, entity) then
+      GlobalState.log_entity("Sent to ass char", entity)
+      return
+    end
+  end
+
+  -- try vehicles
+  for _, vent in pairs(GlobalState.get_vehicles()) do
+    if try_to_send_to_net(vent.logistic_network, name, entity) then
+      GlobalState.log_entity("Sent to vehicle", entity)
+      return
     end
   end
 end

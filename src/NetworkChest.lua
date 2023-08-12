@@ -845,25 +845,6 @@ function M.onTick_60()
   M.check_alerts()
 end
 
--- try to send the item named @name to the network @net for @entity
-local function try_to_send_to_net(net, name, entity)
-  if net ~= nil and net.available_construction_robots > 0 then
-    for _, cell in ipairs(net.cells) do
-      if cell.stationed_construction_robot_count > 0 and
-         cell.is_in_construction_range(entity.position)
-      then
-        local n_inserted = net.insert({name=name, count=1})
-        if n_inserted > 0 then
-          GlobalState.increment_item_count(name, -1)
-          GlobalState.alert_transfer_set(entity.unit_number)
-          return true
-        end
-      end
-    end
-  end
-  return false
-end
-
 function M.handle_missing_material(player, entity, name)
   -- did we already transfer something for this ghost/upgrade?
   if GlobalState.alert_transfer_get(entity.unit_number) == true then
@@ -877,36 +858,16 @@ function M.handle_missing_material(player, entity, name)
     return
   end
 
-  -- Find the land-based network that covers this position
+  -- Find the construction network(s) that covers this position
   local nets = entity.surface.find_logistic_networks_by_construction_area(entity.position, "player")
   for _, net in ipairs(nets) do
-    if try_to_send_to_net(net, name, entity) then
-      GlobalState.log_entity("Sent to net", entity)
-      return
-    end
-  end
-
-  --  Try the character network for the player that got the alert.
-  if player.character ~= nil and player.character.logistic_network ~= nil then
-    if try_to_send_to_net(player.character.logistic_network, name, entity) then
-      GlobalState.log_entity("Sent to char", entity)
-      return
-    end
-  end
-
-  -- try any "associated" characters (might be a dup from above, not sure)
-  for _, char in ipairs(player.get_associated_characters()) do
-    if try_to_send_to_net(char.logistic_network, name, entity) then
-      GlobalState.log_entity("Sent to ass char", entity)
-      return
-    end
-  end
-
-  -- try vehicles
-  for _, vent in pairs(GlobalState.get_vehicles()) do
-    if try_to_send_to_net(vent.logistic_network, name, entity) then
-      GlobalState.log_entity("Sent to vehicle", entity)
-      return
+    if net.all_construction_robots > 0 then
+      local n_inserted = net.insert({name=name, count=1})
+      if n_inserted > 0 then
+        GlobalState.increment_item_count(name, -1)
+        GlobalState.alert_transfer_set(entity.unit_number)
+        return
+      end
     end
   end
 end

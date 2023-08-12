@@ -845,24 +845,50 @@ function M.onTick_60()
   M.check_alerts()
 end
 
-function M.handle_missing_material(entity, name)
+-- try to send the item named @name to the network @net for @entity
+local function try_to_send_to_net(net, name, entity)
+  if net ~= nil and net.available_construction_robots > 0 then
+    local n_inserted = net.insert({name=name, count=1})
+    if n_inserted > 0 then
+      GlobalState.increment_item_count(name, -1)
+      GlobalState.alert_transfer_set(entity.unit_number)
+      return true
+    end
+  end
+  return false
+end
+
+function M.handle_missing_material(player, entity, name)
   -- did we already transfer something for this ghost/upgrade?
-  if GlobalState.alert_transfer_get(entity.unit_number) ~= true then
-    -- We can only do something about entities in a network
-    -- REVISIT: assuming "player" force only
-    local net = entity.surface.find_logistic_network_by_position(entity.position, "player")
-    if net ~= nil and net.available_construction_robots > 0 then
-      local network_count = GlobalState.get_item_count(name)
-      if network_count > 0 then
-        local n_inserted = net.insert({name=name, count=1})
-        if n_inserted > 0 then
-          GlobalState.set_item_count(name, network_count - 1)
-          GlobalState.alert_transfer_set(entity.unit_number)
-        end
-      else
-        -- FIXME: remove check after missing stuff is merged
-        if GlobalState.missing_item_set ~= nil then
-          GlobalState.missing_item_set(name, entity.unit_number, 1)
+  if GlobalState.alert_transfer_get(entity.unit_number) == true then
+    return
+  end
+
+  -- do we have an item to send?
+  local network_count = GlobalState.get_item_count(name)
+  if network_count < 1 then
+    GlobalState.missing_item_set(name, entity.unit_number, 1)
+    return
+  end
+
+  -- Find the land-based network that covers this position
+  -- alt: entity.surface.find_logistic_networks_by_construction_area(entity.position, "player")
+  local net = entity.surface.find_logistic_network_by_position(entity.position, "player")
+  if try_to_send_to_net(net, name, entity) then
+    --game.print(string.format("Sent %s to net", name))
+    return
+  end
+
+  -- no love. Try the character network for the player that got the alert.
+  if player.character ~= nil and player.character.logistic_network ~= nil then
+    net = player.character.logistic_network
+    -- if we can satisfy this request, then don't send (bad idea?)
+    -- make sure at least one cell is within range
+    for _, cell in ipairs(net.cells) do
+      if cell.is_in_construction_range(entity.position) then
+        if try_to_send_to_net(player.character.logistic_network, name, entity) then
+          game.print(string.format("Sent %s to char net", name))
+          return
         end
       end
     end
@@ -882,11 +908,11 @@ function M.check_alerts()
             local entity = alert.target
             -- we only care about ghosts and items that are set to upgrade
             if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
-              M.handle_missing_material(entity, entity.ghost_name)
+              M.handle_missing_material(player, entity, entity.ghost_name)
             else
               local tent = entity.get_upgrade_target()
               if tent ~= nil then
-                M.handle_missing_material(entity, tent.name)
+                M.handle_missing_material(player, entity, tent.name)
               end
             end
           end

@@ -544,4 +544,83 @@ function M.resolve_name(name)
   return nil
 end
 
+--[[
+Automatically configure a chest to request ingredients needed for linked assemblers.
+        local buffer_size = settings.global
+          ["item-network-stack-size-on-assembler-paste"].value
+
+]]
+function M.auto_network_chest(entity)
+  local requests = {}
+  local provides = {}
+
+  local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
+
+  M.log_entity("auto-scan", entity)
+
+  -- scan surroundings for inserters. long-handed inserter can be 2 away
+  local entities = entity.surface.find_entities_filtered{ position=entity.position, radius=2, type="inserter" }
+
+  -- NOTE: is seems like the inserter doesn't set pickup_target or drop_target until it needs to
+
+  local function log_entities_at(title, pos, exclude_ent)
+    local nn = entity.surface.find_entities_filtered{ position=pos, radius=0.1 }
+    for _, ent in ipairs(nn) do
+      if ent ~= exclude_ent then
+        M.log_entity(title, ent)
+      end
+    end
+  end
+
+  for _, ent in ipairs(entities) do
+    M.log_entity("auto-check", ent)
+    game.print(string.format("  pick=(%s,%s) drop=(%s,%s)",
+      ent.pickup_position.x, ent.pickup_position.y,
+      ent.drop_position.x, ent.drop_position.y))
+    log_entities_at(" - pick", ent.pickup_position, ent)
+    log_entities_at(" - drop", ent.drop_position, ent)
+    M.log_entity("auto-check-pick", ent.pickup_target)
+    M.log_entity("auto-check-drop", ent.drop_target)
+
+    -- pickup from the chest, delivering elsewhere. scan target recipe for 'ingredients'
+    if ent.pickup_target == entity then
+      if ent.drop_target ~= nil then
+        if ent.drop_target.type == "assembling-machine" then
+          local recipe = ent.drop_target.get_recipe()
+          if recipe ~= nil then
+            for _, xx in ipairs(recipe.ingredients) do
+              -- We don't actually care about the ingredient count, as the inserter can only hold so
+              -- many and the chest should be refilled before the inserter is finished.
+              -- and it will be auto-adjusted
+              requests[xx.name] = (requests[xx.name] or 0) + buffer_size
+            end
+          end
+        end
+
+        -- REVISIT: other types? furnace? at least we can add coal
+      end
+    end
+
+    -- drop in the chest, pick up from elsewhere. scan target recipe for 'products'
+    if ent.drop_target == entity then
+      if ent.pickup_target ~= nil then
+        if ent.pickup_target.type == "assembling-machine" then
+          local recipe = ent.pickup_target.get_recipe()
+          if recipe ~= nil then
+            for _, xx in ipairs(recipe.products) do
+              provides[xx.name] = xx.amount + (provides[xx.name] or 0)
+            end
+          end
+        end
+
+        -- REVISIT: other types? furnace?
+      end
+    end
+  end
+
+  -- REVISIT: do we need to scan for loaders?
+
+  return requests, provides
+end
+
 return M

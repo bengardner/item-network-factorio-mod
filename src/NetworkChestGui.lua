@@ -39,6 +39,11 @@ function M.on_gui_opened(player, chest_entity)
     caption = "Add Item",
     tags = { event = UiConstants.ADD_ITEM_BTN_NAME },
   })
+  requests_header_flow.add({
+    type = "button",
+    caption = "Auto",
+    tags = { event = UiConstants.AUTO_ITEM_BTN_NAME },
+  })
   -- add_request_btn.style.width = 40
   local requests_scroll = requests_flow.add({
     type = "scroll-pane",
@@ -441,6 +446,99 @@ end
 function Modal.set_limit(limit, modal)
   modal.limit = limit
   modal.limit_input.text = string.format("%d", limit)
+end
+
+function Modal.try_to_auto(player_index)
+  --local player = game.get_player(player_index)
+  local ui = GlobalState.get_ui_state(player_index)
+  local chest_ui = ui.network_chest
+  local entity = chest_ui.chest_entity
+
+  -- the chest must still exist
+  if entity == nil or not entity.valid then
+    return
+  end
+
+  game.print(string.format("try_to_auto %s @ (%s,%s)", entity.name,
+    entity.position.x, entity.position.y))
+
+  -- we only deal with requests/takes right now
+  local auto_request, auto_provide = GlobalState.auto_network_chest(entity)
+  if auto_request ~= nil and next(auto_request) ~= nil then
+    game.print("AUTO Requests")
+    for name, count in pairs(auto_request) do
+      game.print(string.format("  %s %s", name, count))
+    end
+  end
+  if auto_provide ~= nil and next(auto_provide) ~= nil then
+    game.print("AUTO Provide")
+    for name, count in pairs(auto_provide) do
+      game.print(string.format("  %s %s", name, count))
+    end
+  end
+
+  local chest_req = {}
+  for item_name, item_count in pairs(auto_request) do
+    table.insert(chest_req, {
+      type = "take",
+      item = item_name,
+      buffer = item_count,
+      limit = 0,
+      })
+  end
+
+  -- print the chest_req
+  game.print("Chest Req")
+  for _, rr in ipairs(chest_req) do
+    game.print(string.format(" -- %s @ %s", rr.item, rr.buffer))
+  end
+  game.print("Old Req")
+  for _, old_req in ipairs(chest_ui.requests) do
+    game.print(string.format(" -- type=%s item=%s id=%s",
+      old_req.type, old_req.item, old_req.id))
+  end
+
+  -- convert to the ui format
+  local ui_req = M.get_ui_requests_from_chest_requests(chest_req)
+  game.print("UI Req")
+  for _, rr in ipairs(ui_req) do
+    --local edit_req_id = ""
+    local edit_mode = "add"
+
+    -- see if this item has already been requested
+    for _, old_req in ipairs(chest_ui.requests) do
+      --game.print(string.format(" -- old_req type=%s item=%s id=%s",
+      --  old_req.type, old_req.item, old_req.id))
+
+      if old_req.item == rr.item then
+        if rr.buffer <= old_req.buffer then
+          -- no change
+          edit_mode = "none"
+        else
+          edit_mode = "edit"
+        end
+        break
+      end
+    end
+    game.print(string.format(" -- mode=%s type=%s item=%s buffer=%s limit=%s id=%s",
+      edit_mode,
+      rr.type, rr.item, rr.buffer, rr.limit, rr.id))
+
+    --table.insert(chest_ui.requests, request)
+    --M.add_request_element(request, chest_ui.requests_scroll)
+  end
+
+--[[
+  -- make sure item request does not already exist
+  for _, request in ipairs(chest_ui.requests) do
+    if (
+        modal_type == "add"
+        or modal_type == "edit" and request.id ~= request_id
+      ) and request.item == item then
+      return
+    end
+  end
+]]
 end
 
 function Modal.try_to_confirm(player_index)

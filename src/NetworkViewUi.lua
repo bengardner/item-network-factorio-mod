@@ -87,6 +87,24 @@ function M.open_main_frame(player_index)
   }
   header_drag.style.size = { M.WIDTH - 210, 20 }
 
+  local search_enabled = false
+  if search_enabled then
+    header_flow.add{
+      type = "textfield",
+      style = "titlebar_search_textfield",
+    }
+
+    header_flow.add{
+      type = "sprite-button",
+      sprite = 'utility/search_white',
+      hovered_sprite = 'utility/search_black',
+      clicked_sprite = 'utility/search_black',
+      style = "frame_action_button",
+      tooltip = { "gui.search" },
+      tags = { event = UiConstants.NV_SEARCH_BTN },
+    }
+  end
+
   header_flow.add {
     type = "sprite-button",
     sprite = "utility/refresh",

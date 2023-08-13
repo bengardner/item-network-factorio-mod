@@ -212,7 +212,124 @@ function M.update_items(player_index)
   })
   item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
 
-  local rows = M.get_rows_of_items(net_view.view_type)
+  local h_stack_def = {
+    type = "flow",
+    direction = "horizontal",
+  }
+
+  local rows = M.get_rows_of_items(view_type)
+  for _, row in ipairs(rows) do
+    local item_h_stack = item_flow.add(h_stack_def)
+    for _, item in ipairs(row) do
+      -- -1 is filtered out and used to mean an "add" slot
+      if item.count < 0 then
+        item_h_stack.add({
+          type = "sprite-button",
+          sprite = "utility/slot_icon_resource_black",
+          tags = { event = UiConstants.NV_ITEM_SPRITE },
+          -- FIXME: needs translation tag
+          tooltip = { "", "Left-click with an item stack to add to the network" },
+        })
+      else
+        local sprite_path = view_type
+        if sprite_path == "shortage" then
+          if item.temp ~= nil then
+            sprite_path = "fluid"
+          else
+            sprite_path = "item"
+          end
+        end
+        local def = {
+          type = "sprite-button",
+          sprite = sprite_path .. "/" .. item.item,
+        }
+        if sprite_path == "item" then
+          def.tooltip = item_tooltip(item.item, item.count, is_item)
+          if is_item then
+            def.tags = { event = UiConstants.NV_ITEM_SPRITE, item = item.item }
+          end
+        else
+          def.tooltip = fluid_tooltip(item.item, item.temp, item.count)
+        end
+        local item_view = item_h_stack.add(def)
+        item_view.number = item.count
+      end
+    end
+  end
+end
+
+function M.on_gui_click_item(event, element)
+  --[[
+  This handles a click on an item sprite in the item view.
+  If the cursor has something in it, then the cursor content is dumped into the item network.
+  If the cursor is empty then we grab something from the item network.
+    left-click grabs one item.
+    shift + left-click grabs one stack.
+    ctrl + left-click grabs it all.
+
+  REVISIT:
+    - should this transfer if clicked on an item
+  ]]
+  local player = game.players[event.player_index]
+  if player == nil then
+    return
+  end
+  local inv = player.get_main_inventory()
+
+  -- if we have an empty cursor, then we are taking items, which requires a valid target
+  if player.is_cursor_empty() then
+    local item_name = event.element.tags.item
+    if item_name == nil then
+      return
+    end
+
+    local network_count = GlobalState.get_item_count(item_name)
+    local stack_size = game.item_prototypes[item_name].stack_size
+
+    if event.button == defines.mouse_button_type.left then
+      -- shift moves a stack, non-shift moves 1 item
+      local n_transfer = 1
+      if event.shift then
+        n_transfer = stack_size
+      elseif event.control then
+        n_transfer = network_count
+      end
+      -- move one item or stack to player inventory
+      n_transfer = math.min(network_count, n_transfer)
+      if n_transfer > 0 then
+        local n_moved = inv.insert({name = item_name, count = n_transfer})
+        if n_moved > 0 then
+          GlobalState.set_item_count(item_name, network_count - n_moved)
+          -- update the number overlay and the tooltip
+          element.number = GlobalState.get_item_count(item_name)
+          element.tooltip = item_tooltip(item_name, element.number, true)
+        end
+      end
+    end
+    return
+
+  else
+    -- There is a stack in the cursor. Deposit it.
+    local cs = player.cursor_stack
+    if not cs or not cs.valid_for_read then
+      return
+    end
+
+    -- don't deposit tracked entities (can be unique)
+    if cs.item_number ~= nil then
+      game.print(string.format("Refusing to deposit %s", cs.name))
+      return
+    end
+
+    if event.button == defines.mouse_button_type.left then
+      GlobalState.increment_item_count(cs.name, cs.count)
+      cs.clear()
+      player.clear_cursor()
+      M.update_items(event.player_index)
+    end
+  end
+end
+
 local function table_count(tab)
   local cnt = 0
   for _, _ in pairs(tab) do
@@ -238,6 +355,7 @@ function M.get_limit_items()
   end
   return limits
 end
+
 local function find_sprite_path(name)
   for _, pfx in ipairs({"item", "fluid"}) do
     local tmp = string.format("%s/%s", pfx, name)

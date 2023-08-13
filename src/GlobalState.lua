@@ -324,16 +324,21 @@ function M.delete_chest_entity(unit_number)
   global.mod.chests[unit_number] = nil
 end
 
-function M.put_chest_contents_in_network(entity)
-  local inv = entity.get_output_inventory()
-
+function M.put_inventory_in_network(inv, status)
+  status = status or M.UPDATE_STATUS.NOT_UPDATED
   if inv ~= nil then
     local contents = inv.get_contents()
     for item, count in pairs(contents) do
       M.increment_item_count(item, count)
+      status = M.UPDATE_STATUS.UPDATED
     end
     inv.clear()
   end
+  return status
+end
+
+function M.put_chest_contents_in_network(entity)
+  M.put_inventory_in_network(entity.get_output_inventory())
 end
 
 function M.register_tank_entity(entity, config)

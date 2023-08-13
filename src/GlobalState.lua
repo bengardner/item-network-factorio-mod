@@ -544,6 +544,18 @@ function M.resolve_name(name)
   return nil
 end
 
+function M.log_entity(title, entity)
+  if entity ~= nil then
+    if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
+      game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)",
+        title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
+    else
+      game.print(string.format("%s: [%s] %s @ (%s,%s)",
+        title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+    end
+  end
+end
+
 --[[
 Automatically configure a chest to request ingredients needed for linked assemblers.
         local buffer_size = settings.global

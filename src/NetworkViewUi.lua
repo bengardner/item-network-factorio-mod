@@ -183,7 +183,7 @@ function M.update_items(player_index)
     item_flow.destroy()
   end
 
-  game.print(string.format("update_items: %s", net_view.view_type))
+  --game.print(string.format("update_items: %s", net_view.view_type))
 
   -- REVISIT: this would be where we branch off for the "limits" tab
   if net_view.view_type == "limits" then
@@ -193,24 +193,57 @@ function M.update_items(player_index)
   end
 end
 
+local function item_tooltip(name, count)
+  return { "", game.item_prototypes[name].localised_name, ": ", count }
+end
+
+local function fluid_tooltip(name, temp, count)
+  local item_name = game.fluid_prototypes[name].localised_name
+  return {
+    "",
+    item_name,
+    ": ",
+    string.format("%.0f", count),
+    " at ",
+    { "format-degrees-c", string.format("%.0f", temp) },
+  }
+end
+
 function M.render_tab_items_fluids_shortages(main_flow, view_type)
+  local is_item = view_type == "item"
   -- create the item grid display
-  local item_flow = main_flow.add({
+  local item_flow_def = {
     type = "scroll-pane",
     direction = "vertical",
     name = UiConstants.NV_ITEM_FLOW,
     vertical_scroll_policy = "always",
-  })
+  }
+  local h_stack_def = {
+    type = "flow",
+    direction = "horizontal",
+  }
+  local item_flow = main_flow.add(item_flow_def)
   item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+
+  -- pad the item row so there is a slot to dump items from the cursor
+  local did_pad = false
+  local function pad_item_row(item_h_stack, count)
+    if is_item then
+      for _ = 1, count do
+        item_h_stack.add({
+          type = "sprite-button",
+          sprite = "utility/slot_icon_resource_black",
+          tags = { event = UiConstants.NV_ITEM_SPRITE },
+        })
+        did_pad = true
+      end
+    end
+  end
 
   local rows = M.get_rows_of_items(view_type)
   for _, row in ipairs(rows) do
-    local item_h_stack = item_flow.add({
-      type = "flow",
-      direction = "horizontal",
-    })
+    local item_h_stack = item_flow.add(h_stack_def)
     for _, item in ipairs(row) do
-      local item_name
       local tooltip
       local sprite_path = view_type
       if sprite_path == "shortage" or sprite_path == "limits" then
@@ -220,27 +253,94 @@ function M.render_tab_items_fluids_shortages(main_flow, view_type)
           sprite_path = "item"
         end
       end
-      if sprite_path == "item" then
-        item_name = game.item_prototypes[item.item].localised_name
-        tooltip = { "", item_name, ": ", item.count }
-      else
-        item_name = game.fluid_prototypes[item.item].localised_name
-        tooltip = {
-          "",
-          item_name,
-          ": ",
-          string.format("%.0f", item.count),
-          " at ",
-          { "format-degrees-c", string.format("%.0f", item.temp) },
-        }
-      end
-      local item_view = item_h_stack.add({
+      local def = {
         type = "sprite-button",
-        elem_type = view_type,
+        elem_type = sprite_path, -- is this needed?
         sprite = sprite_path .. "/" .. item.item,
-        tooltip = tooltip,
-      })
+      }
+      if sprite_path == "item" then
+        tooltip = item_tooltip(item.item, item.count)
+        if view_type == "item" then
+          def.tags = { event = UiConstants.NV_ITEM_SPRITE, item = item.item }
+        end
+      else
+        tooltip = fluid_tooltip(item.item, item.temp, item.count)
+      end
+      def.tooltip = tooltip
+      local item_view = item_h_stack.add(def)
       item_view.number = item.count
+    end
+    pad_item_row(item_h_stack, 10 - #row)
+  end
+  if not did_pad then
+    pad_item_row(item_flow.add(h_stack_def), 10)
+  end
+end
+
+function M.on_gui_click_item(event, element)
+  --[[
+  This handles a click on an item sprite in the item view.
+  If the cursor has something in it, then the cursor content is dumped into the item network.
+  If the cursor is empty then we grab something from the item network.
+    left-click grabs one item.
+    shift + left-click grabs one stack.
+    ctrl + left-click grabs it all.
+  ]]
+  local player = game.players[event.player_index]
+  if player == nil then
+    return
+  end
+  local inv = player.get_main_inventory()
+
+  -- if we have an empty cursor, then we are taking items, which requires a valid target
+  if player.is_cursor_empty() then
+    local item_name = event.element.tags.item
+    if item_name == nil then
+      return
+    end
+
+    local network_count = GlobalState.get_item_count(item_name)
+    local stack_size = game.item_prototypes[item_name].stack_size
+
+    if event.button == defines.mouse_button_type.left then
+      -- shift moves a stack, non-shift moves 1 item
+      local n_transfer = 1
+      if event.shift then
+        n_transfer = stack_size
+      elseif event.control then
+        n_transfer = network_count
+      end
+      -- move one item or stack to player inventory
+      n_transfer = math.min(network_count, n_transfer)
+      if n_transfer > 0 then
+        local n_moved = inv.insert({name = item_name, count = n_transfer})
+        if n_moved > 0 then
+          GlobalState.set_item_count(item_name, network_count - n_moved)
+          element.number = GlobalState.get_item_count(item_name)
+          element.tooltip = item_tooltip(item_name, element.number)
+        end
+      end
+    end
+    return
+
+  else
+    -- There is a stack in the cursor. Deposit it.
+    local cs = player.cursor_stack
+    if not cs or not cs.valid_for_read then
+      return
+    end
+
+    -- don't deposit tracked entities (can be unique)
+    if cs.item_number ~= nil then
+      game.print(string.format("Refusing to deposit %s", cs.name))
+      return
+    end
+
+    if event.button == defines.mouse_button_type.left then
+      GlobalState.increment_item_count(cs.name, cs.count)
+      cs.clear()
+      player.clear_cursor()
+      M.update_items(event.player_index)
     end
   end
 end

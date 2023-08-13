@@ -845,7 +845,7 @@ function M.onTick_60()
   M.check_alerts()
 end
 
-function M.handle_missing_material(player, entity, name)
+function M.handle_missing_material(entity, name)
   -- did we already transfer something for this ghost/upgrade?
   if GlobalState.alert_transfer_get(entity.unit_number) == true then
     return
@@ -885,11 +885,11 @@ function M.check_alerts()
             local entity = alert.target
             -- we only care about ghosts and items that are set to upgrade
             if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
-              M.handle_missing_material(player, entity, entity.ghost_name)
+              M.handle_missing_material(entity, entity.ghost_name)
             else
               local tent = entity.get_upgrade_target()
               if tent ~= nil then
-                M.handle_missing_material(player, entity, tent.name)
+                M.handle_missing_material(entity, tent.name)
               end
             end
           end

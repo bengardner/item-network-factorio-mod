@@ -309,10 +309,6 @@ function M.get_vehicle_entity(unit_number)
   return global.mod.vehicles[unit_number]
 end
 
-function M.get_vehicles()
-  return global.mod.vehicles
-end
-
 -- add a vehicle, assume the caller knows what he is doing
 function M.vehicle_add_entity(entity)
   if global.mod.vehicles[entity.unit_number] == nil then

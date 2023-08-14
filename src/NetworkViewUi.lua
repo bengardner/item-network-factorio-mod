@@ -231,25 +231,18 @@ function M.update_items(player_index)
           tooltip = { "", "Left-click with an item stack to add to the network" },
         })
       else
-        local sprite_path = view_type
-        if sprite_path == "shortage" then
-          if item.temp ~= nil then
-            sprite_path = "fluid"
-          else
-            sprite_path = "item"
-          end
-        end
+        local sprite_path = find_sprite_path(item.item)
         local def = {
           type = "sprite-button",
-          sprite = sprite_path .. "/" .. item.item,
+          sprite = sprite_path,
         }
-        if sprite_path == "item" then
+        if item.temp ~= nil then
+          def.tooltip = fluid_tooltip(item.item, item.temp, item.count)
+        else
           def.tooltip = item_tooltip(item.item, item.count, is_item)
           if is_item then
             def.tags = { event = UiConstants.NV_ITEM_SPRITE, item = item.item }
           end
-        else
-          def.tooltip = fluid_tooltip(item.item, item.temp, item.count)
         end
         local item_view = item_h_stack.add(def)
         item_view.number = item.count
@@ -364,10 +357,6 @@ local function find_sprite_path(name)
     end
   end
   return "item/item-unknown"
-end
-
-local function startswith(text, prefix)
-  return text:find(prefix, 1, true) == 1
 end
 
 function M.render_tab_limits(main_flow)

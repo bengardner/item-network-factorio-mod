@@ -413,6 +413,7 @@ local function update_network_chest(info)
     inv.set_filter(idx, nil)
   end
 
+  if #info.requests > 0 then
   -- make transfers with network
   for _, request in ipairs(info.requests) do
     local current_count = contents[request.item] or 0
@@ -487,6 +488,7 @@ local function update_network_chest(info)
     end
   end
   inv.set_bar(bar_idx)
+  end
 
   -- put additional items into network
   for item, count in pairs(contents) do

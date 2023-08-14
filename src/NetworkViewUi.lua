@@ -349,16 +349,6 @@ function M.get_limit_items()
   return limits
 end
 
-local function find_sprite_path(name)
-  for _, pfx in ipairs({"item", "fluid"}) do
-    local tmp = string.format("%s/%s", pfx, name)
-    if game.is_valid_sprite_path(tmp) then
-      return tmp
-    end
-  end
-  return "item/item-unknown"
-end
-
 function M.render_tab_limits(main_flow)
   -- create the item grid display
   local item_flow = main_flow.add({
@@ -417,7 +407,6 @@ function M.render_tab_limits(main_flow)
 
       local item_view = item_h_stack.add({
         type = "sprite-button",
-        elem_type = elem_type,
         sprite = sprite_path,
         tooltip = tooltip,
       })

@@ -4,7 +4,6 @@ local UiHandlers = require "src.UiHandlers"
 local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
-local constants = require "src.constants"
 
 local M = {}
 

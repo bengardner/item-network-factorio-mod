@@ -1,4 +1,3 @@
-local Queue = require "src.Queue"
 local NetworkChest = require "src.NetworkChest"
 local GlobalState = require "src.GlobalState"
 local constants = require "src.constants"

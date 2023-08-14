@@ -652,17 +652,18 @@ function M.auto_network_chest(entity)
   return requests, provides
 end
 
--- translate a tile name to the minable.result name
+-- translate a tile name to the item name ("stone-path" => "stone-brick")
 function M.resolve_name(name)
-  -- no change if this is a fluid or item
   if game.item_prototypes[name] ~= nil or game.fluid_prototypes[name] ~= nil then
     return name
   end
 
-  -- return the tile's minable.result if it is a string
   local prot = game.tile_prototypes[name]
-  if prot ~= nil and prot.minable ~= nil and type(prot.minable.result) == "string" then
-    return prot.minable.result
+  if prot ~= nil then
+    local mp = prot.mineable_properties
+    if mp.minable and #mp.products > 0 then
+      return mp.products[1].name
+    end
   end
 
   return nil

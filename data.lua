@@ -14,16 +14,15 @@ end
 
 function M.add_network_chest()
   local name = "network-chest"
-  local override_item_name = "iron-chest"
+  local override_item_name = "steel-chest"
   local overwrite_prototype = "container"
 
   local entity = table.deepcopy(data.raw[overwrite_prototype]
     [override_item_name])
   entity.name = name
-  entity.picture = {
-    filename = Paths.graphics .. "/entities/network-chest.png",
-    size = 64,
-    scale = 0.5,
+  entity.picture.layers[1].filename = Paths.graphics .. "/entities/network-chest-steel.png"
+  entity.picture.layers[1].hr_version.filename = Paths.graphics .. "/entities/hr-network-chest-steel.png"
+  entity.icon = Paths.graphics .. "/icons/network-chest-steel.png"
   }
   entity.inventory_size = constants.NUM_INVENTORY_SLOTS
   entity.inventory_type = "with_filters_and_bar"

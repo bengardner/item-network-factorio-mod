@@ -51,8 +51,15 @@ function M.on_gui_opened(player, chest_entity)
     vertical_scroll_policy = "always",
   })
   requests_scroll.style.size = { width = width - 30, height = height - 120 }
-  for _, request in ipairs(requests) do
-    M.add_request_element(request, requests_scroll)
+
+M.log_chest_state(chest_entity, chest_info)
+
+  if #requests == 0 then
+    M.add_autochest_element(chest_entity, chest_info, requests_scroll)
+  else
+    for _, request in ipairs(requests) do
+      M.add_request_element(request, requests_scroll)
+    end
   end
   local end_button_flow = requests_flow.add({
     type = "flow",
@@ -77,12 +84,115 @@ function M.on_gui_opened(player, chest_entity)
   }
 end
 
+function M.log_chest_state(entity, info)
+  local inv = entity.get_output_inventory()
+  GlobalState.log_entity("Chest:", entity)
+  game.print(string.format(" - chest has %s requests, bar=%s/%s", #info.requests, inv.get_bar(), #inv))
+  if inv.is_filtered() then
+    for i = 1, #inv do
+      local filt = inv.get_filter(i)
+      if filt ~= nil then
+        game.print(string.format("  [%s] %s", i, filt))
+      end
+    end
+  end
+end
+
+local function add_item_button(parent, cur_row, item_name, count, seconds)
+  local tooltip = {
+    "",
+    game.item_prototypes[item_name].localised_name,
+  }
+  if cur_row == nil or #cur_row.children == 10 then
+    cur_row = parent.add({
+      type = "flow",
+      direction = "horizontal",
+    })
+  end
+
+  if count ~= nil then
+    table.insert(tooltip, ": ")
+    table.insert(tooltip, count)
+  elseif seconds ~= nil then
+    table.insert(tooltip, ": ")
+    table.insert(tooltip, string.format("last provided %d seconds ago", seconds))
+  end
+  local btn = cur_row.add({
+    type = "sprite-button",
+    sprite = "item/" .. item_name,
+    --caption = "Seen 5 seconds ago",
+    tooltip = tooltip,
+  })
+  if count ~= nil then
+    btn.number = count
+  end
+  return cur_row
+end
+
+function M.add_autochest_element(entity, info, frame)
+  frame.add({
+    type = "label",
+    caption = "This chest is in auto-provider mode.",
+  })
+
+  local inv = entity.get_output_inventory()
+  local contents = inv.get_contents()
+  local is_locked = (inv.get_bar() < #inv)
+  if is_locked then
+    frame.add({
+      type = "label",
+      caption = "It is locked due to the following items.",
+    })
+    local subframe
+    for i = inv.get_bar(), #inv do
+      if inv[i].valid_for_read then
+        local name = inv[i].name
+        subframe = add_item_button(frame, subframe, name, contents[name])
+      end
+    end
+    if inv.get_bar() > 1 then
+      frame.add({
+        type = "label",
+        caption = "It is accepting the following items.",
+      })
+      subframe = nil
+      for i = 1, inv.get_bar() do
+        local name = inv.get_filter(i)
+        if name ~= nil then
+          subframe = add_item_button(frame, subframe, name, GlobalState.get_insert_count(name))
+        end
+      end
+    else
+      frame.add({
+        type = "label",
+        caption = "It is not accepting items.",
+      })
+    end
+  else
+    frame.add({
+      type = "label",
+      caption = "It is currently unlocked.",
+    })
+  end
+  if info.auto_tick and next(info.auto_tick) ~= nil then
+    frame.add({
+      type = "label",
+      caption = "It has recently provided the following items to the network.",
+    })
+    local subframe
+    for name, tick in pairs(info.auto_tick) do
+      subframe = add_item_button(frame, subframe, name, nil, (game.tick - tick) / 60)
+    end
+  end
+end
+
 function M.add_request_element(request, parent)
   local flow = parent.add({
     type = "flow",
     direction = "horizontal",
     name = request.id,
   })
+  flow.style.vertical_align = "center"
 
   flow.add({ name = UiConstants.BEFORE_ITEM_NAME, type = "label" })
 
@@ -98,17 +208,32 @@ function M.add_request_element(request, parent)
   local edit_btn = flow.add({
     type = "button",
     caption = "Edit",
+    tooltip = { "" , "Edit request" },
     tags = { event = UiConstants.EDIT_REQUEST_BTN, request_id = request.id },
   })
   edit_btn.style.width = 60
 
-  local remove_btn = flow.add({
+  local pad = flow.add({ type= "empty-widget" })
+  pad.style.horizontally_stretchable = true
+
+  flow.add {
+    type = "sprite-button",
+    sprite = "utility/close_white",
+    hovered_sprite = "utility/close_black",
+    clicked_sprite = "utility/close_black",
+    style = "close_button",
+    tooltip = { "" , "Delete request" },
+    tags = { event = UiConstants.REMOVE_REQUEST_BTN, request_id = request.id },
+  }
+
+--[[  local remove_btn = flow.add({
     type = "button",
     caption = "x",
+    tooltip = { "" , "Delete request" },
     tags = { event = UiConstants.REMOVE_REQUEST_BTN, request_id = request.id },
   })
   remove_btn.style.width = 40
-
+]]
   M.update_request_element(request, flow)
 end
 

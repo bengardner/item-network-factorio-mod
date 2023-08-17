@@ -272,7 +272,21 @@ M.event_handlers = {
     name = UiConstants.NV_ITEM_LIMIT,
     event = "on_gui_click",
     handler = function(event, element)
-      NetworkViewUi.on_gui_click_limit(event, element)
+      NetworkViewUi.on_limit_click_item(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_SELECT,
+    event = "on_gui_elem_changed",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_elem_changed(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_SAVE,
+    event = "on_gui_click",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_save(event, element)
     end
   },
   {

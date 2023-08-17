@@ -6,11 +6,107 @@ local M = {}
 M.WIDTH = 490
 M.HEIGHT = 500
 
--- Builds the GUI for the item, fluid, and shortage tabs.
+--[[
+  Builds the GUI for the item, fluid, and shortage tabs.
+  This page contains one element named "item_flow", which is later populated with sprite-buttons.
+]]
 local function build_item_page(parent)
   local main_flow = parent.add({
     type = "flow",
     direction = "vertical",
+  })
+
+  local item_flow = main_flow.add({
+    type = "scroll-pane",
+    direction = "vertical",
+    name = "item_flow", --UiConstants.NV_ITEM_FLOW,
+    vertical_scroll_policy = "always",
+  })
+  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+
+  return main_flow
+end
+
+--[[
+  Builds the GUI for the limits tag.
+  This page contains an element named "item_flow", which is later populated with sprite-buttons.
+
+  +-----------------------------------------+
+  | [I] [I] [I] [I] [I] [I] [I] [I] [I] [I] |
+  ...
+  | [I] [I] [I] [I] [I] [I] [I] [I] [I] [I] |
+  +-----------------------------------------+
+  | [E] [limit] => [new limit]       [save] |
+  +-----------------------------------------+
+
+  It then has another row, which contains
+    * an "choose-elem-button"
+    * a label for the "old/current limit"
+    * a "transfer to the new limit" button
+    * a textbox for entering a new limit
+    * a save button
+
+  The first hack will leave out the transfer button and put the current limit
+  in the new_limit textbox.
+]]
+local function build_limit_page(parent)
+  local main_flow = parent.add({
+    type = "flow",
+    direction = "vertical",
+  })
+
+  local item_flow = main_flow.add({
+    type = "scroll-pane",
+    direction = "vertical",
+    name = "item_flow", --UiConstants.NV_ITEM_FLOW,
+    vertical_scroll_policy = "always",
+  })
+  --item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - (82 + 64) }
+  item_flow.style.vertically_stretchable = true
+  item_flow.style.horizontally_stretchable = true
+
+  local edit_flow = main_flow.add({
+    type = "flow",
+    direction = "horizontal",
+    name = "edit_flow", --UiConstants.NV_ITEM_FLOW,
+  })
+  edit_flow.style.size = { width = M.WIDTH - 30, height = 48 }
+  edit_flow.style.vertical_align = "center"
+  edit_flow.style.horizontally_stretchable = true
+  edit_flow.style.left_padding = 4
+  edit_flow.style.right_padding = 4
+
+  -- add the selector
+  edit_flow.add({
+    type = "choose-elem-button",
+    elem_type = "item",
+    name = "item_name",
+    tooltop = { "", "Click to select an item or click an existing item above" },
+    tags = { event = UiConstants.NV_LIMIT_SELECT },
+  })
+
+  -- the current/new limit
+  edit_flow.add({
+    type = "label",
+    caption = "Limit",
+  })
+  edit_flow.add({
+    type = "textfield",
+    text = "0",
+    numeric = true,
+    name = "new_limit",
+  })
+  local pad = edit_flow.add({ type= "empty-widget" })
+  pad.style.horizontally_stretchable = true
+
+  -- add save button
+  edit_flow.add({
+    type = "sprite-button",
+    sprite = "utility/enter",
+    tooltip = { "", "Update limit" },
+    name = "item_save",
+    style = "frame_action_button",
+    tags = { event = UiConstants.NV_LIMIT_SAVE },
   })
 
   return main_flow
@@ -140,7 +236,7 @@ function M.open_main_frame(player_index)
   tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
 
   -- FIXME: "limits" should use a different layout
-  tabbed_pane.add_tab(tab_limits, build_item_page(tabbed_pane, false))
+  tabbed_pane.add_tab(tab_limits, build_limit_page(tabbed_pane))
 
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1
@@ -193,10 +289,12 @@ function M.update_items(player_index)
     return
   end
 
-  local item_flow = main_flow[UiConstants.NV_ITEM_FLOW]
-  if item_flow ~= nil then
-    item_flow.destroy()
+  local item_flow = main_flow.item_flow -- [UiConstants.NV_ITEM_FLOW]
+  if item_flow == nil then
+    game.print("what the hey")
+    return
   end
+  item_flow.clear()
 
   if net_view.view_type == "limits" then
     M.render_tab_limits(main_flow)
@@ -205,14 +303,6 @@ function M.update_items(player_index)
 
   local view_type = net_view.view_type
   local is_item = view_type == "item"
-
-  item_flow = main_flow.add({
-    type = "scroll-pane",
-    direction = "vertical",
-    name = UiConstants.NV_ITEM_FLOW,
-    vertical_scroll_policy = "always",
-  })
-  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
 
   local h_stack_def = {
     type = "flow",
@@ -361,13 +451,9 @@ end
 
 function M.render_tab_limits(main_flow)
   -- create the item grid display
-  local item_flow = main_flow.add({
-    type = "scroll-pane",
-    direction = "vertical",
-    name = UiConstants.NV_ITEM_FLOW,
-    vertical_scroll_policy = "always",
-  })
-  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+  local item_flow = main_flow.item_flow
+
+  item_flow.clear()
 
   --[[
     Strategy: anything in the network appears in the list. If there is no limit, then show infinity.
@@ -479,7 +565,7 @@ function M.get_list_of_items(view_type)
     end
   elseif view_type == "limits" then
 
-    table.insert(items, { item = "empty-slot", count=-1 })
+    --table.insert(items, { item = "empty-slot", count=-1 })
     for item_name, count in pairs(M.get_limit_items()) do
       local nn, tt = GlobalState.fluid_temp_key_decode(item_name)
       if tt ~= nil then
@@ -541,152 +627,66 @@ function M.on_every_5_seconds(event)
   end
 end
 
-function M.on_gui_click_limit(event, element)
-  -- grab and verify the player
-  local player_index = event.player_index
-  local player = game.get_player(player_index)
+-- grab and verify the player
+local function limit_event_prep(event)
+  local player = game.get_player(event.player_index)
+  if player == nil then
+    return
+  end
+  local ui = GlobalState.get_ui_state(event.player_index)
+  if ui.net_view == nil then
+    return
+  end
+  if ui.net_view.view_type ~= "limits" then
+    return
+  end
+  local tabbed_pane = ui.net_view.tabbed_pane
+  local main_flow = tabbed_pane.tabs[tabbed_pane.selected_tab_index].content
+  if main_flow == nil then
+    return
+  end
+  return player,  main_flow.edit_flow
+end
+
+local function limit_set_edit_item(edit_flow, item_name)
+  if item_name ~= nil then
+    local prot = game.item_prototypes[item_name]
+    if prot ~= nil then
+      edit_flow.item_name.elem_value = item_name
+      edit_flow.new_limit.text = string.format("%s", GlobalState.get_limit(item_name))
+    end
+  end
+end
+
+-- the selection change. refresh the current limit text box
+function M.on_limit_elem_changed(event, element)
+  local player, edit_flow = limit_event_prep(event)
   if player == nil then
     return
   end
 
-  -- grab and verify the item
-  local item_name = event.element.tags.item
-  if item_name == nil then
+  limit_set_edit_item(edit_flow, edit_flow.item_name.elem_value)
+end
+
+-- read the limit and save to the limits structure
+function M.on_limit_save(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
     return
   end
-  game.print(string.format("Clicked on %s limit", item_name))
 
-  -- TODO: create another window on top
-  local ui = GlobalState.get_ui_state(player_index)
-  if ui.limit_view ~= nil then
-    ui.limit_view.frame.destroy()
-    ui.limit_view = nil
+  if GlobalState.set_limit(edit_flow.item_name.elem_value, edit_flow.new_limit.text) then
+    M.update_items(player.index)
+  end
+end
+
+function M.on_limit_click_item(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
+    return
   end
 
-
-  GlobalState.update_queue_log()
-
-  local width = M.WIDTH
-  local height = M.HEIGHT + 32
-
-  --[[
-  I want the GUI to look like this:
-
-  +--------------------------------------------------+
-  | Network View ||||||||||||||||||||||||||||| [R][X]|
-  +--------------------------------------------------+
-  | Items | Fluids | Shortages | Limits |            | <- tabs
-  +--------------------------------------------------+
-  | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] | <- content
-    ... repeated ...
-  | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] |
-  +--------------------------------------------------+
-
-  [R] is refresh button and [X] is close. [I] are item icons with the number overlay.
-  I want the ||||| stuff to make the window draggable.
-  Right now, I can get it to look right, but it isn't draggable.
-  OR I can omit the [R][X] buttons make it draggable.
-  ]]
-
-  -- create the main window
-  local frame = player.gui.screen.add({
-    type = "frame",
-    name = UiConstants.NV_FRAME,
-    -- enabling the frame caption enables dragging, but
-    -- doesn't allow the buttons to be on the top line
-    --caption = "Network View",
-  })
-  player.opened = frame
-  frame.style.size = { width, height }
-  frame.auto_center = true
-
-  local main_flow = frame.add({
-    type = "flow",
-    direction = "vertical",
-  })
-
-  local header_flow = main_flow.add({
-    type = "flow",
-    direction = "horizontal",
-  })
-  header_flow.drag_target = frame
-
-  header_flow.add {
-    type = "label",
-    caption = "Network View",
-    style = "frame_title",
-    ignored_by_interaction = true,
-  }
-
-  local header_drag = header_flow.add {
-    type = "empty-widget",
-    style = "draggable_space",
-    ignored_by_interaction = true,
-  }
-  header_drag.style.size = { M.WIDTH - 210, 20 }
-
-  local search_enabled = false
-  if search_enabled then
-    header_flow.add{
-      type = "textfield",
-      style = "titlebar_search_textfield",
-    }
-
-    header_flow.add{
-      type = "sprite-button",
-      sprite = 'utility/search_white',
-      hovered_sprite = 'utility/search_black',
-      clicked_sprite = 'utility/search_black',
-      style = "frame_action_button",
-      tooltip = { "gui.search" },
-      tags = { event = UiConstants.NV_SEARCH_BTN },
-    }
-  end
-
-  header_flow.add {
-    type = "sprite-button",
-    sprite = "utility/refresh",
-    style = "frame_action_button",
-    tooltip = { "gui.refresh" },
-    tags = { event = UiConstants.NV_REFRESH_BTN },
-  }
-
-  header_flow.add {
-    type = "sprite-button",
-    sprite = "utility/close_white",
-    hovered_sprite = "utility/close_black",
-    clicked_sprite = "utility/close_black",
-    style = "close_button",
-    tags = { event = UiConstants.NV_CLOSE_BTN },
-  }
-
-  -- add tabbed stuff
-  local tabbed_pane = main_flow.add {
-    type = "tabbed-pane",
-    tags = { event = UiConstants.NV_TABBED_PANE },
-  }
-
-  local tab_item = tabbed_pane.add { type = "tab", caption = "Items" }
-  local tab_fluid = tabbed_pane.add { type = "tab", caption = "Fluids" }
-  local tab_shortage = tabbed_pane.add { type = "tab", caption = "Shortages" }
-  local tab_limits = tabbed_pane.add{type="tab", caption="Limits"}
-
-  tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
-  tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
-  tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
-
-  -- FIXME: "limits" should use a different layout
-  tabbed_pane.add_tab(tab_limits, build_item_page(tabbed_pane, false))
-
-  -- select "items" (not really needed, as that is the default)
-  tabbed_pane.selected_tab_index = 1
-
-  ui.net_view = {
-    frame = frame,
-    tabbed_pane = tabbed_pane,
-  }
-
-  M.update_items(player_index)
+  limit_set_edit_item(edit_flow, event.element.tags.item)
 end
 
 return M

@@ -139,6 +139,30 @@ function M.get_limits()
   return global.mod.item_limits
 end
 
+function M.get_limit(item_name)
+  return global.mod.item_limits[item_name] or 2000000000
+end
+
+-- set the limit, return true if it changed
+function M.set_limit(item_name, value)
+  if type(item_name) == "string" then
+    local old_value = M.get_limit(item_name)
+    value = tonumber(value)
+    if value ~= nil and value ~= old_value then
+      global.mod.item_limits[item_name] = value
+      return true
+    end
+  end
+  return false
+end
+
+-- get the number of items that we are allowed to put in the network
+function M.get_insert_count(item_name)
+  local cnt = M.get_item_count(item_name)
+  local lim = M.get_limit(item_name)
+  return math.max(0, lim - cnt)
+end
+
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }
 local function missing_set(mtab, item_name, unit_number, count)
   local tt = mtab[item_name]
@@ -714,10 +738,13 @@ function M.auto_network_chest(entity)
 
   local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
 
-  M.log_entity("auto-scan", entity)
+  M.log_entity("*** auto-scan", entity)
 
-  -- scan surroundings for inserters. long-handed inserter can be 2 away
-  local entities = entity.surface.find_entities_filtered{ position=entity.position, radius=2, type="inserter" }
+  -- scan surroundings for inserters, loaders, and mining drills. long-handed inserter can be 2 away
+  local entities = entity.surface.find_entities_filtered{ position=entity.position, radius=3,
+      type={"inserter", "loader", "mining-drill" }}
+
+  game.print(string.format(" ++ found %s entities", #entities))
 
   -- NOTE: is seems like the inserter doesn't set pickup_target or drop_target until it needs to
 
@@ -730,7 +757,17 @@ function M.auto_network_chest(entity)
     end
   end
 
-  for _, ent in ipairs(entities) do
+  for idx, ent in ipairs(entities) do
+    if ent.unit_number ~= nil then
+      if ent.drop_target == entity then
+        M.log_entity(string.format("%s is drop_target:", idx), ent)
+        game.print(string.format(" entity name=%s type=%s", ent.name, ent.type))
+      else
+        M.log_entity(string.format("%s NOT drop_target:", idx), ent)
+        game.print(string.format(" entity name=%s type=%s", ent.name, ent.type))
+      end
+    end
+    --[[
     M.log_entity("auto-check", ent)
     game.print(string.format("  pick=(%s,%s) drop=(%s,%s)",
       ent.pickup_position.x, ent.pickup_position.y,
@@ -774,10 +811,10 @@ function M.auto_network_chest(entity)
         -- REVISIT: other types? furnace?
       end
     end
+  ]]
   end
 
   -- REVISIT: do we need to scan for loaders?
-
   return requests, provides
 end
 

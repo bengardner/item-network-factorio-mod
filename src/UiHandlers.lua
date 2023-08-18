@@ -139,6 +139,11 @@ M.event_handlers = {
     handler =  NetworkChestGui.remove_request_line,
   },
   {
+    name = UiConstants.UPDATE_REQEUST_BTN,
+    event = "on_gui_click",
+    handler =  NetworkChestGui.on_chest_request_update,
+  },
+  {
     name = UiConstants.EDIT_REQUEST_BTN,
     event = "on_gui_click",
     handler = function(event, element)

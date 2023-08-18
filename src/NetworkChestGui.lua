@@ -104,10 +104,10 @@ M.log_chest_state(chest_entity, chest_info)
   edit_flow.add({
     type = "sprite-button",
     sprite = "utility/enter",
-    tooltip = { "", "Update limit" },
+    tooltip = { "", "Update Request" },
     name = "edit_save",
     style = "frame_action_button",
-    --tags = { event = UiConstants.NV_LIMIT_SAVE },
+    tags = { event = UiConstants.UPDATE_REQEUST_BTN },
   })
 
   local end_button_flow = requests_flow.add({
@@ -131,6 +131,7 @@ M.log_chest_state(chest_entity, chest_info)
     requests = requests,
     requests_scroll = requests_scroll,
     frame = frame,
+    edit_flow = edit_flow,
   }
 
   M.refresh_request_panel(ui.network_chest)
@@ -333,11 +334,19 @@ function M.update_request_element(request, element)
     )
   else
     before_item_label = "Provide"
-    after_item_label = string.format(
-      "when network has less than %d and buffer %d.",
-      request.limit,
-      request.buffer
-    )
+    if request.limit > 0 then
+      after_item_label = string.format(
+        "when network has less than %d and buffer %d.",
+        request.limit,
+        request.buffer
+      )
+    else
+      after_item_label = string.format(
+        "when network has less than %d (global) and buffer %d.",
+        GlobalState.get_limit(request.item),
+        request.buffer
+      )
+    end
   end
   element[UiConstants.BEFORE_ITEM_NAME].caption = before_item_label
   element[UiConstants.AFTER_ITEM_NAME].caption = after_item_label
@@ -825,6 +834,64 @@ function Modal.try_to_confirm(player_index)
 
   ui.close_type = "confirm_request"
   player.opened = chest_ui.frame
+end
+
+--[[
+   Handler for the "add/update" button on the bottom of the frame
+   Edit bar elements:
+    network.chest.edit_flow
+      edit_flow.edit_dropdown.selected_index  :: 1=take, 2=give
+      edit_flow.edit_item.elem_value          :: item name
+      edit_flow.edit_limit.text               :: limit text
+      edit_flow.edit_buffer.text              :: buffer text
+]]
+function M.on_chest_request_update(event, element)
+  local ui = GlobalState.get_ui_state(event.player_index)
+  local chest_ui = ui.network_chest
+  if chest_ui == nil or chest_ui.edit_flow == nil then
+    return
+  end
+  local edit_flow = chest_ui.edit_flow
+
+  local request_type = "give"
+  if edit_flow.edit_dropdown.selected_index == 1 then
+    request_type = "take"
+  end
+  local item = edit_flow.edit_item.elem_value
+  local limit = tonumber(edit_flow.edit_limit.text) or 0
+  local buffer = tonumber(edit_flow.edit_buffer.text) or 0
+
+  if item == nil then
+    return
+  end
+
+  -- "take" must buffer something, "give" can have no buffer.
+  -- give limit=0 means use global limit
+  if buffer < 0 or limit < 0 or (request_type == "take" and buffer <= 0) then
+    return
+  end
+
+  -- find existing item for update
+  for _, request in ipairs(chest_ui.requests) do
+    if request.item == item then
+      request.type = request_type
+      request.buffer = buffer
+      request.limit = limit
+      M.refresh_request_panel(chest_ui)
+      return
+    end
+  end
+
+  -- adding new
+  local request = {
+    id = GlobalState.rand_hex(16),
+    type = request_type,
+    item = item,
+    buffer = buffer,
+    limit = limit,
+  }
+  table.insert(chest_ui.requests, request)
+  M.refresh_request_panel(chest_ui)
 end
 
 M.Modal = Modal

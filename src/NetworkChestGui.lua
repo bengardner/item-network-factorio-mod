@@ -127,10 +127,39 @@ M.log_chest_state(chest_entity, chest_info)
 
   ui.network_chest = {
     chest_entity = chest_entity,
+    chest_info = chest_info,
     requests = requests,
     requests_scroll = requests_scroll,
     frame = frame,
   }
+
+  M.refresh_request_panel(ui.network_chest)
+end
+
+function M.refresh_request_panel(network_chest)
+  network_chest.requests_scroll.clear()
+
+  if #network_chest.requests == 0 then
+    M.add_autochest_element(network_chest.chest_entity, network_chest.chest_info, network_chest.requests_scroll)
+  else
+    for _, request in ipairs(network_chest.requests) do
+      M.add_request_element(request, network_chest.requests_scroll)
+    end
+  end
+end
+
+function M.remove_request_line(event, element)
+  local ui_chest = GlobalState.get_ui_state(event.player_index).network_chest
+  local request_id = element.tags.request_id
+
+  for idx, request in ipairs(ui_chest.requests) do
+    if request.id == request_id then
+      table.remove(ui_chest.requests, idx)
+      ui_chest.requests_scroll[request_id].destroy()
+      M.refresh_request_panel(ui_chest)
+      return
+    end
+  end
 end
 
 function M.log_chest_state(entity, info)
@@ -791,6 +820,9 @@ function Modal.try_to_confirm(player_index)
     local request_elem = chest_ui.requests_scroll[request_id]
     M.update_request_element(request, request_elem)
   end
+
+  M.refresh_request_panel(chest_ui)
+
   ui.close_type = "confirm_request"
   player.opened = chest_ui.frame
 end

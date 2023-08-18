@@ -136,19 +136,7 @@ M.event_handlers = {
   {
     name = UiConstants.REMOVE_REQUEST_BTN,
     event = "on_gui_click",
-    handler = function(event, element)
-      local ui = GlobalState.get_ui_state(event.player_index).network_chest
-      local request_id = element.tags.request_id
-      assert(request_id ~= nil)
-      for idx, request in ipairs(ui.requests) do
-        if request.id == request_id then
-          table.remove(ui.requests, idx)
-          ui.requests_scroll[request_id].destroy()
-          return
-        end
-      end
-      assert(false)
-    end,
+    handler =  NetworkChestGui.remove_request_line,
   },
   {
     name = UiConstants.EDIT_REQUEST_BTN,

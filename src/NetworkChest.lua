@@ -4,6 +4,8 @@ local UiHandlers = require "src.UiHandlers"
 local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
+local tables_have_same_keys = require("src.tables_have_same_keys")
+  .tables_have_same_keys
 
 local M = {}
 
@@ -399,18 +401,65 @@ local function request_list_sort(left, right)
   return left.sort_count < right.sort_count
 end
 
+--------------------------------------------------------------------------------
+
+-- Reset a locked inventory.
+-- Filters can only be before the bar, so we only clear up to that point.
+local function inv_reset(inv)
+  inv.clear()
+  local bar_idx = inv.get_bar()
+  if bar_idx < #inv then
+    for idx = 1, bar_idx - 1 do
+      inv.set_filter(idx)
+    end
+    inv.set_bar()
+  end
+end
+
+--[[
+  (re)lock an unconfigured chest.
+  We create one slot for each recent_item that isn't in leftovers.
+  Then we remember the first empty slot as the bar index.
+  Then we add all the leftovers and set the bar.
+]]
+local function inv_unconfigured_lock(inv, leftovers, recent_items)
+  inv_reset(inv)
+
+  -- add filtered slots for recent items NOT in leftovers
+  local f_idx = 1
+  for item, _ in pairs(recent_items) do
+    -- create a filtered slot for each item we have seen recently that doesn't have items
+    if leftovers[item] == nil then
+      inv.set_filter(f_idx, item)
+      f_idx = f_idx + 1
+    end
+  end
+
+  -- add the leftover items (no need to filter)
+  for item, count in pairs(leftovers) do
+    -- add leftovers to the chest.
+    local n_sent = inv.insert({name = item, count = count})
+
+    -- sanity check: send anything that failed to the network
+    if count > n_sent then
+      GlobalState.increment_item_count(item, count - n_sent)
+    end
+  end
+
+  -- set the bar on the first left-over
+  inv.set_bar(f_idx)
+end
+
 --[[
 Updates a chest if there are no requests.
 Anything in the chest is forwarded to the item-network.
 If anything can't be forwarded, the chest is locked (set bar=1) and the leftovers stay in the chest.
 ]]
-local function update_network_chest_unconfigured(inv, contents, info, status)
-  -- keep track of what passed through this chest in auto mode
-  local auto_tick = info.auto_tick
-  if auto_tick == nil then
-    auto_tick = {}
-    info.auto_tick = auto_tick
-  end
+local function update_network_chest_unconfigured_unlocked(inv, contents, info)
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+
+  -- We will re-add anything that cannot be sent when we lock the chest
+  inv.clear()
 
   -- move everything to the network, calculating leftovers
   local leftovers = {}
@@ -419,51 +468,83 @@ local function update_network_chest_unconfigured(inv, contents, info, status)
       local n_free = GlobalState.get_insert_count(item)
       local n_transfer = math.min(count, n_free)
       if n_transfer > 0 then
-        auto_tick[item] = game.tick
+        info.recent_items[item] = game.tick
         GlobalState.increment_item_count(item, n_transfer)
         status = GlobalState.UPDATE_STATUS.UPDATED
         count = count - n_transfer
       end
+
       if count > 0 then
+        -- can't hold on to more than one stack
+        local stack_size = game.item_prototypes[item].stack_size
+        if count > stack_size then
+          GlobalState.increment_item_count(item, count - stack_size)
+          count = stack_size
+        end
         leftovers[item] = count
       end
     end
   end
 
-  -- if there are any leftovers, we put them back and lockdown the chest
+  -- if there are any leftovers, we put them back and lock the chest
   if next(leftovers) ~= nil then
-    -- go over everything that passed through the chest in the last minute
-    -- if there is still room, then create a filtered slot for it
-    local f_idx = 1
-    for item, tick in pairs(auto_tick) do
-      -- create a filtered slot for each item we have seen recently
-      if leftovers[item] == nil then
-        if game.tick - tick < 360 then -- and GlobalState.get_insert_count(item) > 0 then
-          inv.set_filter(f_idx, item)
-          f_idx = f_idx + 1
-        end
-      end
-    end
-    -- add the leftover items (no need to filter)
-    for item, count in pairs(leftovers) do
-      -- add leftovers to the chest. if we fail to insert (impossible!), then force-send to network
-      local n_sent = inv.insert({name = item, count = count})
-      if n_sent < count then
-        GlobalState.increment_item_count(item, count - n_sent)
-      end
-    end
-    -- set the bar on the first left-over
-    inv.set_bar(f_idx)
+    GlobalState.log_entity("UNCONF LOCK", info.entity)
+    info.locked_items = leftovers
+    inv_unconfigured_lock(inv, leftovers, info.recent_items)
+    status = GlobalState.UPDATE_STATUS.UPDATED
   end
   return status
 end
 
-local function refactor_requests(requests)
-  local kvr = {} -- key=item, val={ is_take, buffer, limit }
-  for _, rr in ipairs(requests) do
-    kvr[rr.iten] = rr
+--[[
+Updates a chest if there are no requests.
+Anything in the chest is forwarded to the item-network.
+If anything can't be forwarded, the chest is locked (set bar=1) and the leftovers stay in the chest.
+]]
+local function update_network_chest_unconfigured_locked(inv, contents, info)
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+
+  -- NOTE: We do not clear the inventory or filters. There is one slot per item.
+
+  -- move everything to the network, calculating leftovers
+  local leftovers = {}
+  for item, count in pairs(contents) do
+    if count > 0 then
+      local n_free = GlobalState.get_insert_count(item)
+      local n_transfer = math.min(count, n_free)
+      if n_transfer > 0 then
+        info.recent_items[item] = game.tick
+        GlobalState.increment_item_count(item, n_transfer)
+        inv.remove({name=item, count=n_transfer})
+        status = GlobalState.UPDATE_STATUS.UPDATED
+        count = count - n_transfer
+      end
+      if count > 0 then
+        -- Since there is one slot per item, count will be <= stack_size.
+        leftovers[item] = count
+      end
+    end
   end
-  return kvr
+
+  -- check if the list of locked items changed
+  if tables_have_same_keys(info.locked_items, leftovers) then
+    -- nope! we are done.
+    return status
+  end
+  info.locked_items = leftovers
+
+  -- See if we can unlock the chest (chest is empty)
+  if next(leftovers) == nil then
+    -- the chest is now empty, so unlock it
+    GlobalState.log_entity("UNCONF UNLOCK", info.entity)
+    inv.reset()
+  else
+    -- need to re-lock the chest
+    GlobalState.log_entity("UNCONF RE-LOCK", info.entity)
+    inv_unconfigured_lock(inv, leftovers, info.recent_items)
+  end
+
+  return GlobalState.UPDATE_STATUS.UPDATED
 end
 
 -- get the "buffer" value for this item
@@ -476,36 +557,81 @@ local function get_request_buffer(requests, item)
   return 0, "give"
 end
 
+local function inv_filter_slots(inv, item, inv_idx, count)
+  for _ = 1, count do
+    inv.set_filter(inv_idx, item)
+    inv_idx = inv_idx + 1
+  end
+  return inv_idx
+end
+
 --[[
-Updates a chest if there are requests.
-Anything in the chest is forwarded to the item-network.
-If anything can't be forwarded, the chest is locked (set bar=1) and the leftovers stay in the chest.
+  Lock a configured chest.
+
+  inv = the inventory (info.entity.get_output_inventory())
+  contents = the remaining contents, key=item_name, val=count
+  info.locked_items = the items that are in the locked state
+  info.recent_items = the items that have been in the chest recently
 ]]
-local function update_network_chest_configured(inv, contents, info, status)
+local function inv_configured_lock(inv, contents, info)
+  -- the configured chest needs to be locked, so we re-add contents
+  inv_reset(inv)
 
-  local locked = {} -- key=item, val=true
+  -- going to sort requests into two sections: before and after the bar
+  local slots_unlocked = {}
+  local slots_locked = {}
+  local locked_items = info.locked_items or {}
 
-  -- pass 1: satisfy requests (pull into contents)
+  -- add "take" request filters
   for _, req in pairs(info.requests) do
+    local stack_size = game.item_prototypes[req.item].stack_size
+    local n_slots = math.floor((req.buffer + stack_size - 1) / stack_size)
     if req.type == "take" then
-      local n_have = contents[req.item] or 0
-      local n_innet = GlobalState.get_item_count(req.item)
-      local n_avail = math.max(0, n_innet - req.limit)
-      local n_want = req.buffer
-      if n_want > n_have then
-        local n_transfer = math.min(n_want - n_have, n_avail)
-        if n_transfer > 0 then
-          status = GlobalState.UPDATE_STATUS.UPDATED
-          contents[req.item] = n_have + n_transfer
-          GlobalState.set_item_count(req.item, n_innet - n_transfer)
-        else
-          GlobalState.missing_item_set(req.item, info.entity.unit_number, n_want - n_have)
-        end
+      slots_unlocked[req.item] = n_slots
+    else
+      -- provider needs 1 slot to buffer 0 items
+      n_slots = math.min(1, n_slots)
+
+      if locked_items[req.item] == nil then
+        slots_unlocked[req.item] = n_slots
+      else
+        slots_locked[req.item] = n_slots
       end
     end
   end
 
-  -- pass 2: send excessive items; note which sends fail
+  -- add one slot for any item we have seen, but isn't in the chest
+  for name, _ in pairs(info.recent_items) do
+    if slots_unlocked[name] == nil and slots_locked[name] == nil then
+      slots_unlocked[name] = 1
+    end
+  end
+
+  -- now set the provider filters and the bar
+  local inv_idx = 1
+  for item, n_slots in pairs(slots_unlocked) do
+    inv_idx = inv_filter_slots(inv, item, inv_idx, n_slots)
+  end
+  local bar_idx = inv_idx
+  for item, n_slots in pairs(slots_locked) do
+    inv_idx = inv_filter_slots(inv, item, inv_idx, n_slots)
+  end
+  -- add the contents and set the bar to lock
+  for name, count in pairs(contents) do
+    inv.insert({name=name, count=count})
+  end
+  inv.set_bar(bar_idx)
+end
+
+--[[
+  Common bit for a configured chest.
+  Push items to the net, then handle "take" requests
+]]
+local function update_network_chest_configured_common(inv, contents, info)
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+  local locked_items = {} -- key=item, val=true
+
+  -- pass 1: Send excessive items; note which sends fail in "locked" table
   for item, n_have in pairs(contents) do
     local n_want, r_type = get_request_buffer(info.requests, item)
 
@@ -516,167 +642,116 @@ local function update_network_chest_configured(inv, contents, info, status)
       local n_transfer = math.min(n_extra, n_free)
       if n_transfer > 0 then
         status = GlobalState.UPDATE_STATUS.UPDATED
+        inv.remove({name=item, count=n_transfer})
         GlobalState.increment_item_count(item, n_transfer)
+        info.recent_items[item] = game.tick
         n_have = n_have - n_transfer
         contents[item] = n_have
       end
       if n_have > n_want and r_type ~= "take" then
-        -- add to the locked area
-        locked[item] = true
+        -- add to the locked area (provider unable to provide)
+        locked_items[item] = true
       end
     end
   end
 
-  -- do we need to lock this chest?
-  if next(locked) == nil then
-    -- nope: just dump everything back in and we ad
-    for name, count in pairs(contents) do
-      inv.insert({name=name, count=count})
+  -- pass 2: satisfy requests (pull into contents)
+  for _, req in pairs(info.requests) do
+    if req.type == "take" then
+      local n_have = contents[req.item] or 0
+      local n_innet = GlobalState.get_item_count(req.item)
+      local n_avail = math.max(0, n_innet - req.limit)
+      local n_want = req.buffer
+      if n_want > n_have then
+        local n_transfer = math.min(n_want - n_have, n_avail)
+        if n_transfer > 0 then
+          -- it may not fit in the chest due to other reasons
+          n_transfer = inv.insert({name=req.item, count=n_transfer})
+          if n_transfer > 0 then
+            status = GlobalState.UPDATE_STATUS.UPDATED
+            contents[req.item] = n_have + n_transfer
+            GlobalState.set_item_count(req.item, n_innet - n_transfer)
+          end
+        else
+          GlobalState.missing_item_set(req.item, info.entity.unit_number, n_want - n_have)
+        end
+      end
     end
+  end
+
+  return status, locked_items
+end
+
+--[[
+  Update the chest in the configured-unlocked state.
+  Transitions to locked if an item can't be pushed to the network.
+]]
+local function update_network_chest_configured_unlocked(inv, contents, info)
+  local status, locked_items = update_network_chest_configured_common(inv, contents, info)
+
+  -- is the chest still unlocked? if so, we are done.
+  if next(locked_items) == nil then
+    info.locked_items = nil
+    return status
+  end
+  info.locked_items = locked_items
+
+  inv_configured_lock(inv, contents, info)
+
+  return GlobalState.UPDATE_STATUS.UPDATED
+end
+
+--[[
+Process a configured, locked chest.
+]]
+local function update_network_chest_configured_locked(inv, contents, info)
+  local status, locked_items = update_network_chest_configured_common(inv, contents, info)
+
+  -- check if the list of locked items changed
+  if tables_have_same_keys(info.locked_items, locked_items) then
     return status
   end
 
-  -- we need to lock the chest, so add non-locked stuff first
-  for name, count in pairs(contents) do
-    if locked[name] ~= true then
-      inv.insert({name=name, count=count})
+  -- can we unlock the chest?
+  if next(locked_items) == nil then
+    info.locked_items = nil
+    -- we no longer have too much stuff, so we can unlock
+    for idx = 1, inv.get_bar() do
+      inv.set_filter(idx, nil)
     end
+    inv.set_bar()
+  else
+    -- the list of locked items changed, so we need to re-lock the chest
+    info.locked_items = locked_items
+    inv_configured_lock(inv, info, contents)
   end
 
-  -- note where we need to set the bar
-  local _, bar_idx = inv.find_empty_stack()
-
-  -- add locked items and set the bar
-  for name, count in pairs(contents) do
-    if locked[name] == true then
-      inv.insert({name=name, count=count})
-    end
-  end
-  inv.set_bar(bar_idx)
-  return status
+  return GlobalState.UPDATE_STATUS.UPDATED
 end
 
 local function update_network_chest(info)
   local inv = info.entity.get_output_inventory()
   local contents = inv.get_contents()
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
 
-  -- reset inventory
-  inv.clear()
-  inv.set_bar()
-  for idx = 1, #inv do
-    inv.set_filter(idx, nil)
+  -- make sure recent_items is present (can get cleared elsewhere)
+  if info.recent_items == nil then
+    info.recent_items = {}
   end
 
+  local is_locked = (inv.get_bar() < #inv)
   if #info.requests == 0 then
-    return update_network_chest_unconfigured(inv, contents, info, status)
-  else
-    return update_network_chest_configured(inv, contents, info, status)
-  end
-
---[[
-  REWORK:
-   - if there are no requests, then dump all items to the network, subject to global limits.
-   -
-  use request.buffer as the number that should be in the chest. default 0.
-
-]]
-
-  if #info.requests > 0 then
-  -- make transfers with network
-  for _, request in ipairs(info.requests) do
-    local current_count = contents[request.item] or 0
-    local network_count = GlobalState.get_item_count(request.item)
-    if request.type == "take" then
-      local n_take = math.max(0, request.buffer - current_count)
-      local n_give = math.max(0, network_count - request.limit)
-      local n_transfer = math.min(n_take, n_give)
-      if n_transfer > 0 then
-        status = GlobalState.UPDATE_STATUS.UPDATED
-        contents[request.item] = current_count + n_transfer
-        GlobalState.set_item_count(request.item, network_count - n_transfer)
-
-        -- if we transferred a full request and there is enough for another, then up the request
-        if n_transfer == request.buffer and network_count > n_transfer*2 then
-          --GlobalState.log_entity("Adjust Transfer", info.entity)
-          request.buffer = request.buffer + 1
-        end
-      end
-
-      -- missing if the number we wanted to take was more than available
-      if n_take > n_give then
-        GlobalState.missing_item_set(request.item, info.entity.unit_number,
-          n_take - n_give)
-      end
+    if is_locked then
+      return update_network_chest_unconfigured_locked(inv, contents, info)
     else
-      -- trying to put items into the item_network
-      local n_give = current_count
-      local n_free = GlobalState.get_insert_count(request.item)
-      --local n_take = math.max(0, math.min(n_free, request.limit - network_count))
-      local n_transfer = math.min(n_free, n_give)
-      if n_transfer > 0 then
-        status = GlobalState.UPDATE_STATUS.UPDATED
-        contents[request.item] = current_count - n_transfer
-        GlobalState.set_item_count(request.item, network_count + n_transfer)
-      end
+      return update_network_chest_unconfigured_unlocked(inv, contents, info)
+    end
+  else
+    if is_locked then
+      return update_network_chest_configured_locked(inv, contents, info)
+    else
+      return update_network_chest_configured_unlocked(inv, contents, info)
     end
   end
-
-  -- get new sorted requests
-  local requests = {}
-  for _, request in ipairs(info.requests) do
-    local stack_size = game.item_prototypes[request.item].stack_size
-    local n_slots = math.ceil(request.buffer / stack_size)
-    local n_max = n_slots * stack_size
-    local old_count = contents[request.item] or 0
-    local new_count = math.min(n_max, old_count)
-    contents[request.item] = old_count - new_count
-    table.insert(requests, {
-      item = request.item,
-      sort_count = new_count - request.buffer,
-      buffer = request.buffer,
-      stack_size = stack_size,
-      count = new_count,
-      n_slots = n_slots,
-    })
-  end
-  table.sort(requests, request_list_sort)
-
-
-  -- flatten sorted requests into slots
-  local slot_idx = 1
-  local bar_idx = 1
-  for _, request in ipairs(requests) do
-    local count = request.count
-    for _ = 1, request.n_slots do
-      inv.set_filter(slot_idx, request.item)
-      if count > 0 then
-        local count_for_current_slot = math.min(count, request.stack_size)
-        count = count - count_for_current_slot
-        local inserted = inv.insert({
-          name = request.item,
-          count = count_for_current_slot,
-        })
-        assert(inserted == count_for_current_slot)
-      end
-      if request.count < request.buffer then
-        bar_idx = bar_idx + 1
-      end
-      slot_idx = slot_idx + 1
-    end
-  end
-  inv.set_bar(bar_idx)
-  end
-
-  -- put additional items into network (these are not covered by a request)
-  for item, count in pairs(contents) do
-    assert(count >= 0)
-    if count > 0 then
-      GlobalState.increment_item_count(item, count)
-    end
-  end
-
-  return status
 end
 
 local function update_tank(info)

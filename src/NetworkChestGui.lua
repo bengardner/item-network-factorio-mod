@@ -174,13 +174,13 @@ function M.add_autochest_element(entity, info, frame)
       caption = "It is currently unlocked.",
     })
   end
-  if info.auto_tick and next(info.auto_tick) ~= nil then
+  if info.recent_items and next(info.recent_items) ~= nil then
     frame.add({
       type = "label",
       caption = "It has recently provided the following items to the network.",
     })
     local subframe
-    for name, tick in pairs(info.auto_tick) do
+    for name, tick in pairs(info.recent_items) do
       subframe = add_item_button(frame, subframe, name, nil, (game.tick - tick) / 60)
     end
   end

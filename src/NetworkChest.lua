@@ -410,7 +410,7 @@ local function inv_reset(inv)
   local bar_idx = inv.get_bar()
   if bar_idx < #inv then
     for idx = 1, bar_idx - 1 do
-      inv.set_filter(idx)
+      inv.set_filter(idx, nil)
     end
     inv.set_bar()
   end
@@ -537,7 +537,7 @@ local function update_network_chest_unconfigured_locked(inv, contents, info)
   if next(leftovers) == nil then
     -- the chest is now empty, so unlock it
     GlobalState.log_entity("UNCONF UNLOCK", info.entity)
-    inv.reset()
+    inv_reset(inv)
   else
     -- need to re-lock the chest
     GlobalState.log_entity("UNCONF RE-LOCK", info.entity)

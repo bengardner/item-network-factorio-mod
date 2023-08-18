@@ -23,7 +23,6 @@ function M.add_network_chest()
   entity.picture.layers[1].filename = Paths.graphics .. "/entities/network-chest-steel.png"
   entity.picture.layers[1].hr_version.filename = Paths.graphics .. "/entities/hr-network-chest-steel.png"
   entity.icon = Paths.graphics .. "/icons/network-chest-steel.png"
-  }
   entity.inventory_size = constants.NUM_INVENTORY_SLOTS
   entity.inventory_type = "with_filters_and_bar"
   entity.minable.result = name

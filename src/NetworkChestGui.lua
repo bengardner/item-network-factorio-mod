@@ -50,7 +50,7 @@ function M.on_gui_opened(player, chest_entity)
     direction = "vertical",
     vertical_scroll_policy = "always",
   })
-  requests_scroll.style.size = { width = width - 30, height = height - 120 }
+  requests_scroll.style.size = { width = width - 30, height = height - 160 }
 
 M.log_chest_state(chest_entity, chest_info)
 
@@ -61,6 +61,55 @@ M.log_chest_state(chest_entity, chest_info)
       M.add_request_element(request, requests_scroll)
     end
   end
+
+  -- edit window
+  local edit_flow = requests_flow.add({
+    type = "flow",
+    direction = "horizontal",
+  })
+  edit_flow.style.vertical_align = "center"
+
+  edit_flow.add({
+    type = "drop-down",
+    caption = "Request or Provide",
+    name = "edit_dropdown",
+    selected_index = 1,
+    items = { "Request", "Provide" },
+  })
+  edit_flow.add({
+    name = "edit_item",
+    type = "choose-elem-button",
+    elem_type = "item",
+  })
+  --edit_flow.add({ type = "label", caption = "when network has more than" })
+  edit_flow.add({ type = "label", caption = "Limit:" })
+  local edit_limit = edit_flow.add({
+    name = "edit_limit",
+    type = "textfield",
+    text = "0",
+  })
+  edit_limit.style.width = 50
+  edit_flow.add({ type = "label", caption = "Buffer:" })
+  local edit_buffer = edit_flow.add({
+    name = "edit_buffer",
+    type = "textfield",
+    text = "5",
+  })
+  edit_buffer.style.width = 50
+
+  local pad = edit_flow.add({ type= "empty-widget" })
+  pad.style.horizontally_stretchable = true
+
+  -- add save button
+  edit_flow.add({
+    type = "sprite-button",
+    sprite = "utility/enter",
+    tooltip = { "", "Update limit" },
+    name = "edit_save",
+    style = "frame_action_button",
+    --tags = { event = UiConstants.NV_LIMIT_SAVE },
+  })
+
   local end_button_flow = requests_flow.add({
     type = "flow",
     direction = "horizontal",
@@ -193,6 +242,8 @@ function M.add_request_element(request, parent)
     name = request.id,
   })
   flow.style.vertical_align = "center"
+  flow.style.right_padding = 8
+  flow.style.left_padding = 8
 
   flow.add({ name = UiConstants.BEFORE_ITEM_NAME, type = "label" })
 
@@ -200,11 +251,13 @@ function M.add_request_element(request, parent)
     name = UiConstants.CHOOSE_ITEM_NAME,
     type = "choose-elem-button",
     elem_type = "item",
+    tags = { event = UiConstants.EDIT_REQUEST_BTN, request_id = request.id },
   })
   choose_item_button.locked = true
 
   flow.add({ name = UiConstants.AFTER_ITEM_NAME, type = "label" })
 
+  --[[
   local edit_btn = flow.add({
     type = "button",
     caption = "Edit",
@@ -212,7 +265,7 @@ function M.add_request_element(request, parent)
     tags = { event = UiConstants.EDIT_REQUEST_BTN, request_id = request.id },
   })
   edit_btn.style.width = 60
-
+]]
   local pad = flow.add({ type= "empty-widget" })
   pad.style.horizontally_stretchable = true
 

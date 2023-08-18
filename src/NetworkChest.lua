@@ -394,13 +394,6 @@ function M.is_request_valid(request)
     request.limit ~= nil
 end
 
-local function request_list_sort(left, right)
-  if left.sort_count == right.sort_count then
-    return left.item < right.item
-  end
-  return left.sort_count < right.sort_count
-end
-
 --------------------------------------------------------------------------------
 
 -- Reset a locked inventory.
@@ -437,10 +430,8 @@ local function inv_unconfigured_lock(inv, leftovers, recent_items)
 
   -- add the leftover items (no need to filter)
   for item, count in pairs(leftovers) do
-    -- add leftovers to the chest.
+    -- add leftovers to the chest. anything that didn't fit goes to the net
     local n_sent = inv.insert({name = item, count = count})
-
-    -- sanity check: send anything that failed to the network
     if count > n_sent then
       GlobalState.increment_item_count(item, count - n_sent)
     end
@@ -455,7 +446,7 @@ Updates a chest if there are no requests.
 Anything in the chest is forwarded to the item-network.
 If anything can't be forwarded, the chest is locked (set bar=1) and the leftovers stay in the chest.
 ]]
-local function update_network_chest_unconfigured_unlocked(inv, contents, info)
+local function update_network_chest_unconfigured_unlocked(info, inv, contents)
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
 
   -- We will re-add anything that cannot be sent when we lock the chest
@@ -475,12 +466,6 @@ local function update_network_chest_unconfigured_unlocked(inv, contents, info)
       end
 
       if count > 0 then
-        -- can't hold on to more than one stack
-        local stack_size = game.item_prototypes[item].stack_size
-        if count > stack_size then
-          GlobalState.increment_item_count(item, count - stack_size)
-          count = stack_size
-        end
         leftovers[item] = count
       end
     end
@@ -500,8 +485,9 @@ end
 Updates a chest if there are no requests.
 Anything in the chest is forwarded to the item-network.
 If anything can't be forwarded, the chest is locked (set bar=1) and the leftovers stay in the chest.
+This does not call inv.clear(), but rather pulls items using inv.remove().
 ]]
-local function update_network_chest_unconfigured_locked(inv, contents, info)
+local function update_network_chest_unconfigured_locked(info, inv, contents)
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
 
   -- NOTE: We do not clear the inventory or filters. There is one slot per item.
@@ -573,7 +559,7 @@ end
   info.locked_items = the items that are in the locked state
   info.recent_items = the items that have been in the chest recently
 ]]
-local function inv_configured_lock(inv, contents, info)
+local function inv_configured_lock(info, inv, contents)
   -- the configured chest needs to be locked, so we re-add contents
   inv_reset(inv)
 
@@ -627,7 +613,7 @@ end
   Common bit for a configured chest.
   Push items to the net, then handle "take" requests
 ]]
-local function update_network_chest_configured_common(inv, contents, info)
+local function update_network_chest_configured_common(info, inv, contents)
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
   local locked_items = {} -- key=item, val=true
 
@@ -686,8 +672,8 @@ end
   Update the chest in the configured-unlocked state.
   Transitions to locked if an item can't be pushed to the network.
 ]]
-local function update_network_chest_configured_unlocked(inv, contents, info)
-  local status, locked_items = update_network_chest_configured_common(inv, contents, info)
+local function update_network_chest_configured_unlocked(info, inv, contents)
+  local status, locked_items = update_network_chest_configured_common(info, inv, contents)
 
   -- is the chest still unlocked? if so, we are done.
   if next(locked_items) == nil then
@@ -696,7 +682,7 @@ local function update_network_chest_configured_unlocked(inv, contents, info)
   end
   info.locked_items = locked_items
 
-  inv_configured_lock(inv, contents, info)
+  inv_configured_lock(info, inv, contents)
 
   return GlobalState.UPDATE_STATUS.UPDATED
 end
@@ -704,8 +690,8 @@ end
 --[[
 Process a configured, locked chest.
 ]]
-local function update_network_chest_configured_locked(inv, contents, info)
-  local status, locked_items = update_network_chest_configured_common(inv, contents, info)
+local function update_network_chest_configured_locked(info, inv, contents)
+  local status, locked_items = update_network_chest_configured_common(info, inv, contents)
 
   -- check if the list of locked items changed
   if tables_have_same_keys(info.locked_items, locked_items) then
@@ -741,15 +727,15 @@ local function update_network_chest(info)
   local is_locked = (inv.get_bar() < #inv)
   if #info.requests == 0 then
     if is_locked then
-      return update_network_chest_unconfigured_locked(inv, contents, info)
+      return update_network_chest_unconfigured_locked(info, inv, contents)
     else
-      return update_network_chest_unconfigured_unlocked(inv, contents, info)
+      return update_network_chest_unconfigured_unlocked(info, inv, contents)
     end
   else
     if is_locked then
-      return update_network_chest_configured_locked(inv, contents, info)
+      return update_network_chest_configured_locked(info, inv, contents)
     else
-      return update_network_chest_configured_unlocked(inv, contents, info)
+      return update_network_chest_configured_unlocked(info, inv, contents)
     end
   end
 end
@@ -771,8 +757,10 @@ local function update_tank(info)
           fluid_instance.name,
           fluid_instance.temperature
         )
+        local key = GlobalState.fluid_temp_key_encode(fluid_instance.name, fluid_instance.temperature)
+        local gl_limit = GlobalState.get_limit(key)
         local n_give = math.max(0, fluid_instance.amount)
-        local n_take = math.max(0, limit - current_count)
+        local n_take = math.max(0, math.max(limit, gl_limit) - current_count)
         local n_transfer = math.floor(math.min(n_give, n_take))
         if n_transfer > 0 then
           status = GlobalState.UPDATE_STATUS.UPDATED
@@ -1035,6 +1023,10 @@ end
 
 function M.on_gui_selected_tab_changed(event)
   UiHandlers.handle_generic_gui_event(event, "on_gui_selected_tab_changed")
+end
+
+function M.on_gui_selection_state_changed(event)
+  UiHandlers.handle_generic_gui_event(event, "on_gui_selection_state_changed")
 end
 
 function M.add_take_btn_enabled()

@@ -98,8 +98,11 @@ function M.inner_setup()
   end
 
   if global.mod.item_limits == nil then
-    global.mod.item_limits = M.get_default_limits()
+    global.mod.item_limits = {}
+    M.limit_scan()
   end
+  -- TEST: remove when good
+  M.limit_scan()
 
   -- TEST: reset the queues
   M.reset_queues()
@@ -109,30 +112,105 @@ function M.reset_queues()
   global.mod.scan_queue = Queue.new()
   global.mod.scan_queue_inactive = Queue.new()
   for unum, _ in pairs(global.mod.chests) do
-    game.print(string.format("chest add %s", unum))
+   -- game.print(string.format("chest add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
   for unum, _ in pairs(global.mod.tanks) do
-    game.print(string.format("tank add %s", unum))
+    --game.print(string.format("tank add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
   for unum, _ in pairs(global.mod.vehicles) do
-    game.print(string.format("vechicle add %s", unum))
+    --game.print(string.format("vechicle add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
   for unum, _ in pairs(global.mod.logistic) do
-    game.print(string.format("logistic add %s", unum))
+    --game.print(string.format("logistic add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
 end
 
-function M.get_default_limits()
-  local limits = {}
-  -- check recipes ?
-  --for _, prot in pairs(game.recipe_prototypes) do
-  --
-  --end
-  return limits
+-- scan existing tanks and chest and use the max give limit as the item limit
+function M.limit_scan(item)
+  game.print("limit scan")
+  local limits = global.mod.item_limits
+
+  for _, info in pairs(global.mod.chests) do
+    if info.requests ~= nil then
+      for _, req in ipairs(info.requests) do
+        if req.type == "give" then
+          local old_limit = limits[req.item]
+          if old_limit == nil or old_limit < req.limit then
+            limits[req.item] = req.limit
+          end
+        end
+      end
+    end
+  end
+
+  for _, info in pairs(global.mod.tanks) do
+    local config = info.config
+    if config ~= nil then
+      if config.type == "give" then
+        if config.temperature ~= nil and config.fluid ~= nil then
+          local key = M.fluid_temp_key_encode(config.fluid, config.temperature)
+          local old_limit = limits[key]
+          if old_limit == nil or old_limit < config.limit then
+            limits[config.fluid] = config.limit
+            game.print(string.format("updated limit %s %s", key, config.limit))
+          end
+        end
+      end
+    end
+  end
+end
+
+-- return a hopefully sane default to help new players
+function M.get_default_limit(item)
+  local prot = game.item_prototypes[item]
+  if prot == nil then
+    -- probably a fluid
+    return 500000
+  end
+  if prot.subgroup == "raw-resource" then
+    -- example: iron-ore
+    return 1000000 -- 1 M
+  elseif prot.subgroup == "raw-material" then
+    -- example: iron-plate
+    return 50000 -- 50 K
+  elseif prot.subgroup == "ammo" then
+    return 10 * prot.stack_size
+  elseif prot.subgroup == "armor" then
+    return 1
+  elseif prot.subgroup == "transport" then
+    return 1
+  elseif prot.subgroup == "defensive-structure" then
+    return 1
+  elseif prot.subgroup == "capsule" then
+    return 50
+  elseif prot.subgroup == "energy" then
+    return 50
+  elseif prot.subgroup == "circuit-network" then
+    return 50
+  elseif prot.subgroup == "gun" then
+    return 5
+  elseif prot.subgroup == "intermediate-product" then
+    return 10 * prot.stack_size
+  elseif prot.subgroup == "production-machine" then
+    return 50
+  elseif prot.subgroup == "belt" then
+    return 200
+  elseif prot.subgroup == "inserter" then
+    return 200
+  elseif prot.subgroup == "train-transport" then
+    if prot.name == "rail" then
+      return 500
+    else
+      -- locomotives, train cars, signals, etc
+      return prot.stack_size
+    end
+  else
+    return 2 * prot.stack_size
+  end
 end
 
 function M.get_limits()
@@ -140,13 +218,18 @@ function M.get_limits()
 end
 
 function M.get_limit(item_name)
-  return global.mod.item_limits[item_name] or 2000000000
+  return global.mod.item_limits[item_name] or M.get_default_limit(item_name)
+end
+
+function M.clear_limit(item_name)
+  global.mod.item_limits[item_name] = nil
 end
 
 -- set the limit, return true if it changed
 function M.set_limit(item_name, value)
   if type(item_name) == "string" then
-    local old_value = M.get_limit(item_name)
+    -- don't use get_limit()
+    local old_value = global.mod.item_limits[item_name]
     value = tonumber(value)
     if value ~= nil and value ~= old_value then
       global.mod.item_limits[item_name] = value
@@ -158,9 +241,7 @@ end
 
 -- get the number of items that we are allowed to put in the network
 function M.get_insert_count(item_name)
-  local cnt = M.get_item_count(item_name)
-  local lim = M.get_limit(item_name)
-  return math.max(0, lim - cnt)
+  return math.max(0, M.get_limit(item_name) - M.get_item_count(item_name))
 end
 
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }
@@ -447,11 +528,13 @@ function M.get_tank_info(unit_number)
 end
 
 function M.copy_chest_requests(source_unit_number, dest_unit_number)
+  -- REVISIT: creating two chests with the same requests field. Intentional?
   global.mod.chests[dest_unit_number].requests =
     global.mod.chests[source_unit_number].requests
 end
 
 function M.copy_tank_config(source_unit_number, dest_unit_number)
+  -- REVISIT: creating two tanks with the same config field. Intentional?
   global.mod.tanks[dest_unit_number].config =
     global.mod.tanks[source_unit_number].config
 end

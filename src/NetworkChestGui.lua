@@ -736,7 +736,11 @@ function Modal.try_to_confirm(player_index)
     return
   end
 
-  if buffer <= 0 or limit < 0 then
+  game.print(string.format("try_to_confirm: rtype=%s item=%s buffer=%s limit=%s", request_type, item, buffer, limit))
+
+  -- "take" must buffer something, "give" can have no buffer.
+  -- give limit=0 means use global limit
+  if buffer < 0 or limit < 0 or (request_type == "take" and buffer <= 0) then
     return
   end
 
@@ -754,7 +758,7 @@ function Modal.try_to_confirm(player_index)
   local used_slots = 0
   for _, request in ipairs(chest_ui.requests) do
     local stack_size = game.item_prototypes[request.item].stack_size
-    local slots = math.ceil(request.buffer / stack_size)
+    local slots = math.max(1, math.ceil(request.buffer / stack_size))
     used_slots = used_slots + slots
   end
   assert(used_slots <= Constants.NUM_INVENTORY_SLOTS)

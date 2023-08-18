@@ -262,6 +262,13 @@ M.event_handlers = {
     end,
   },
   {
+    name = UiConstants.NV_TABBED_PANE,
+    event = "on_gui_selected_tab_changed",
+    handler = function(event, element)
+      NetworkViewUi.update_items(event.player_index)
+    end,
+  },
+  {
     name = UiConstants.NV_ITEM_SPRITE,
     event = "on_gui_click",
     handler = function(event, element)
@@ -269,17 +276,31 @@ M.event_handlers = {
     end
   },
   {
-    name = UiConstants.NV_ITEM_LIMIT,
+    name = UiConstants.NV_LIMIT_ITEM,
     event = "on_gui_click",
     handler = function(event, element)
       NetworkViewUi.on_limit_click_item(event, element)
     end
   },
   {
-    name = UiConstants.NV_LIMIT_SELECT,
+    name = UiConstants.NV_LIMIT_SELECT_ITEM,
     event = "on_gui_elem_changed",
     handler = function(event, element)
-      NetworkViewUi.on_limit_elem_changed(event, element)
+      NetworkViewUi.on_limit_item_elem_changed(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_SELECT_FLUID,
+    event = "on_gui_elem_changed",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_fluid_elem_changed(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_TYPE,
+    event = "on_gui_selection_state_changed",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_elem_type(event, element)
     end
   },
   {
@@ -288,13 +309,6 @@ M.event_handlers = {
     handler = function(event, element)
       NetworkViewUi.on_limit_save(event, element)
     end
-  },
-  {
-    name = UiConstants.NV_TABBED_PANE,
-    event = "on_gui_selected_tab_changed",
-    handler = function(event, element)
-      NetworkViewUi.update_items(event.player_index)
-    end,
   },
   {
     name = UiConstants.NV_CLOSE_BTN,

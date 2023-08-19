@@ -104,7 +104,9 @@ function M.generic_destroy_handler(event, opts)
     if not opts.do_not_delete_entity then
       GlobalState.delete_chest_entity(entity.unit_number)
     end
-    if global.mod.network_chest_gui ~= nil and global.mod.network_chest_gui.entity.unit_number == entity.unit_number then
+    if global.mod.network_chest_gui ~= nil and
+       global.mod.network_chest_gui.entity.unit_number == entity.unit_number
+    then
       global.mod.network_chest_gui.frame.destroy()
       global.mod.network_chest_gui = nil
     end

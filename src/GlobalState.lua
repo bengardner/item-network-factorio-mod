@@ -507,7 +507,10 @@ function M.update_queue(update_entity)
     end
 
     local status = inner_update_entity(unit_number)
-    if status == M.UPDATE_STATUS.NOT_UPDATED or status == M.UPDATE_STATUS.UPDATED or status == M.UPDATE_STATUS.ALREADY_UPDATED then
+    if status == M.UPDATE_STATUS.NOT_UPDATED or
+       status == M.UPDATE_STATUS.UPDATED or
+       status == M.UPDATE_STATUS.ALREADY_UPDATED
+    then
       Queue.push(global.mod.scan_queue, unit_number)
     end
   end

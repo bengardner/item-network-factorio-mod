@@ -425,7 +425,14 @@ local function update_network_chest(info)
         status = GlobalState.UPDATE_STATUS.UPDATED
         contents[request.item] = current_count + n_transfer
         GlobalState.set_item_count(request.item, network_count - n_transfer)
+
+        -- if we transferred a full request and there is enough for another, then up the request
+        if n_transfer == request.buffer and network_count > n_transfer*2 then
+          --GlobalState.log_entity("Adjust Transfer", info.entity)
+          request.buffer = request.buffer + 1
+        end
       end
+
       -- missing if the number we wanted to take was more than available
       if n_take > n_give then
         GlobalState.missing_item_set(request.item, info.entity.unit_number,
@@ -729,6 +736,8 @@ function M.check_alerts()
               local tent = entity.get_upgrade_target()
               if tent ~= nil then
                 M.handle_missing_material(entity, tent.name)
+              else
+                GlobalState.log_entity("Missing", entity)
               end
             end
           end

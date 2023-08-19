@@ -269,6 +269,13 @@ M.event_handlers = {
     end
   },
   {
+    name = UiConstants.NV_ITEM_LIMIT,
+    event = "on_gui_click",
+    handler = function(event, element)
+      NetworkViewUi.on_gui_click_limit(event, element)
+    end
+  },
+  {
     name = UiConstants.NV_TABBED_PANE,
     event = "on_gui_selected_tab_changed",
     handler = function(event, element)

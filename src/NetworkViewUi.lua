@@ -28,6 +28,8 @@ function M.open_main_frame(player_index)
     return
   end
 
+  GlobalState.update_queue_log()
+
   local width = M.WIDTH
   local height = M.HEIGHT + 32
 
@@ -325,7 +327,7 @@ end
 
 local function table_count(tab)
   local cnt = 0
-  for _, _ in pairs(tab) do
+  for _, _ in pairs(tab or {}) do
     cnt = cnt + 1
   end
   return cnt
@@ -333,17 +335,25 @@ end
 
 function M.get_limit_items()
   local limits = GlobalState.get_limits()
-  local items = GlobalState.get_items()
-
-  game.print(string.format("get_limit_items: items=%s limits=%s", table_count(items), table_count(limits)))
 
   -- default to "infinity" for anything in the network without a limit
-  for name, _ in pairs(items) do
+  for name, _ in pairs(GlobalState.get_items()) do
     if limits[name] == nil then
       limits[name] = 2000000000 -- 2 billion means infinite ?
-      game.print(string.format("added limit for %s %s", name, limits[name]))
+      game.print(string.format("added item limit for %s %s", name, limits[name]))
     else
-      game.print(string.format("have limit for %s %s", name, limits[name]))
+      game.print(string.format("have item limit for %s %s", name, limits[name]))
+    end
+  end
+  for name, temp_info in pairs(GlobalState.get_fluids()) do
+    for temp, _ in pairs(temp_info) do
+      local key = GlobalState.fluid_temp_key_encode(name, temp)
+      if limits[key] == nil then
+        limits[key] = 2000000000 -- 2 billion means infinite ?
+        game.print(string.format("added fluid limit for %s %s", key, limits[key]))
+      else
+        game.print(string.format("have fluid limit for %s %s", key, limits[key]))
+      end
     end
   end
   return limits
@@ -403,35 +413,17 @@ function M.render_tab_limits(main_flow)
           " at ",
           { "format-degrees-c", string.format("%.0f", item.temp) },
         }
+
+        if startswith(sprite_path, "item") then
+          def.tooltip = item_tooltip(item.item, item.count)
+        else
+          def.tooltip = fluid_tooltip(item.item, item.temp or 10, item.count)
+        end
+
+        local item_view = item_h_stack.add(def)
+        item_view.number = item.count
       end
-
-      local item_view = item_h_stack.add({
-        type = "sprite-button",
-        sprite = sprite_path,
-        tooltip = tooltip,
-      })
-      item_view.number = item.count
     end
-      -- TODO: fill the rest with blanks
-  end
-  -- add one blank row
-  local item_h_stack = item_flow.add({
-    type = "flow",
-    direction = "horizontal",
-  })
-
-  for _ = 1, 8 do
-    item_h_stack.add{
-      type = "choose-elem-button",
-      elem_type = "item",
-      --elem_filters = { filter= },
-      sprite = 'utility/slot',
-      --hovered_sprite = 'utility/slot',
-      --clicked_sprite = 'utility/slot',
-      --style = "choose-elem-button",
-      --tooltip = { "gui.search" },
-      --tags = { event = UiConstants.NV_SEARCH_BTN },
-    }
   end
 end
 
@@ -487,8 +479,16 @@ function M.get_list_of_items(view_type)
     end
   elseif view_type == "limits" then
 
+    table.insert(items, { item = "empty-slot", count=-1 })
     for item_name, count in pairs(M.get_limit_items()) do
-      table.insert(items, { item = item_name, count = count })
+      local nn, tt = GlobalState.fluid_temp_key_decode(item_name)
+      if tt ~= nil then
+        -- fluid
+        table.insert(items, { item = nn, temp = tt, count = count })
+      else
+        -- item
+        table.insert(items, { item = item_name, count = count })
+      end
       game.print(string.format("limit %s %s", item_name, count))
     end
     game.print(string.format("Found %s limit items", #items))
@@ -525,6 +525,10 @@ function M.destroy(player_index)
     ui.net_view.frame.destroy()
     ui.net_view = nil
   end
+  if ui.limit_view ~= nil then
+    ui.limit_view.frame.destroy()
+    ui.limit_view = nil
+  end
 end
 
 function M.on_gui_closed(event)
@@ -535,6 +539,154 @@ function M.on_every_5_seconds(event)
   for player_index, _ in pairs(GlobalState.get_player_info_map()) do
     M.update_items(player_index)
   end
+end
+
+function M.on_gui_click_limit(event, element)
+  -- grab and verify the player
+  local player_index = event.player_index
+  local player = game.get_player(player_index)
+  if player == nil then
+    return
+  end
+
+  -- grab and verify the item
+  local item_name = event.element.tags.item
+  if item_name == nil then
+    return
+  end
+  game.print(string.format("Clicked on %s limit", item_name))
+
+  -- TODO: create another window on top
+  local ui = GlobalState.get_ui_state(player_index)
+  if ui.limit_view ~= nil then
+    ui.limit_view.frame.destroy()
+    ui.limit_view = nil
+  end
+
+
+  GlobalState.update_queue_log()
+
+  local width = M.WIDTH
+  local height = M.HEIGHT + 32
+
+  --[[
+  I want the GUI to look like this:
+
+  +--------------------------------------------------+
+  | Network View ||||||||||||||||||||||||||||| [R][X]|
+  +--------------------------------------------------+
+  | Items | Fluids | Shortages | Limits |            | <- tabs
+  +--------------------------------------------------+
+  | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] | <- content
+    ... repeated ...
+  | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] |
+  +--------------------------------------------------+
+
+  [R] is refresh button and [X] is close. [I] are item icons with the number overlay.
+  I want the ||||| stuff to make the window draggable.
+  Right now, I can get it to look right, but it isn't draggable.
+  OR I can omit the [R][X] buttons make it draggable.
+  ]]
+
+  -- create the main window
+  local frame = player.gui.screen.add({
+    type = "frame",
+    name = UiConstants.NV_FRAME,
+    -- enabling the frame caption enables dragging, but
+    -- doesn't allow the buttons to be on the top line
+    --caption = "Network View",
+  })
+  player.opened = frame
+  frame.style.size = { width, height }
+  frame.auto_center = true
+
+  local main_flow = frame.add({
+    type = "flow",
+    direction = "vertical",
+  })
+
+  local header_flow = main_flow.add({
+    type = "flow",
+    direction = "horizontal",
+  })
+  header_flow.drag_target = frame
+
+  header_flow.add {
+    type = "label",
+    caption = "Network View",
+    style = "frame_title",
+    ignored_by_interaction = true,
+  }
+
+  local header_drag = header_flow.add {
+    type = "empty-widget",
+    style = "draggable_space",
+    ignored_by_interaction = true,
+  }
+  header_drag.style.size = { M.WIDTH - 210, 20 }
+
+  local search_enabled = false
+  if search_enabled then
+    header_flow.add{
+      type = "textfield",
+      style = "titlebar_search_textfield",
+    }
+
+    header_flow.add{
+      type = "sprite-button",
+      sprite = 'utility/search_white',
+      hovered_sprite = 'utility/search_black',
+      clicked_sprite = 'utility/search_black',
+      style = "frame_action_button",
+      tooltip = { "gui.search" },
+      tags = { event = UiConstants.NV_SEARCH_BTN },
+    }
+  end
+
+  header_flow.add {
+    type = "sprite-button",
+    sprite = "utility/refresh",
+    style = "frame_action_button",
+    tooltip = { "gui.refresh" },
+    tags = { event = UiConstants.NV_REFRESH_BTN },
+  }
+
+  header_flow.add {
+    type = "sprite-button",
+    sprite = "utility/close_white",
+    hovered_sprite = "utility/close_black",
+    clicked_sprite = "utility/close_black",
+    style = "close_button",
+    tags = { event = UiConstants.NV_CLOSE_BTN },
+  }
+
+  -- add tabbed stuff
+  local tabbed_pane = main_flow.add {
+    type = "tabbed-pane",
+    tags = { event = UiConstants.NV_TABBED_PANE },
+  }
+
+  local tab_item = tabbed_pane.add { type = "tab", caption = "Items" }
+  local tab_fluid = tabbed_pane.add { type = "tab", caption = "Fluids" }
+  local tab_shortage = tabbed_pane.add { type = "tab", caption = "Shortages" }
+  local tab_limits = tabbed_pane.add{type="tab", caption="Limits"}
+
+  tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
+  tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
+  tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
+
+  -- FIXME: "limits" should use a different layout
+  tabbed_pane.add_tab(tab_limits, build_item_page(tabbed_pane, false))
+
+  -- select "items" (not really needed, as that is the default)
+  tabbed_pane.selected_tab_index = 1
+
+  ui.net_view = {
+    frame = frame,
+    tabbed_pane = tabbed_pane,
+  }
+
+  M.update_items(player_index)
 end
 
 return M

@@ -25,13 +25,18 @@ function M.inner_setup()
       items = {},
     }
   end
+
+  if global.mod.scan_queue_inactive == nil then
+    global.mod.scan_queue_inactive = Queue.new()
+  end
+
   M.remove_old_ui()
   if global.mod.player_info == nil then
     global.mod.player_info = {}
   end
 
   if global.mod.network_chest_has_been_placed == nil then
-    global.mod.network_chest_has_been_placed = global.mod.scan_queue.size > 0
+    global.mod.network_chest_has_been_placed = (global.mod.scan_queue.size + global.mod.scan_queue_inactive.size) > 0
   end
 
   if global.mod.fluids == nil then
@@ -94,6 +99,30 @@ function M.inner_setup()
 
   if global.mod.item_limits == nil then
     global.mod.item_limits = M.get_default_limits()
+  end
+
+  -- TEST: reset the queues
+  M.reset_queues()
+end
+
+function M.reset_queues()
+  global.mod.scan_queue = Queue.new()
+  global.mod.scan_queue_inactive = Queue.new()
+  for unum, _ in pairs(global.mod.chests) do
+    game.print(string.format("chest add %s", unum))
+    Queue.push(global.mod.scan_queue, unum)
+  end
+  for unum, _ in pairs(global.mod.tanks) do
+    game.print(string.format("tank add %s", unum))
+    Queue.push(global.mod.scan_queue, unum)
+  end
+  for unum, _ in pairs(global.mod.vehicles) do
+    game.print(string.format("vechicle add %s", unum))
+    Queue.push(global.mod.scan_queue, unum)
+  end
+  for unum, _ in pairs(global.mod.logistic) do
+    game.print(string.format("logistic add %s", unum))
+    Queue.push(global.mod.scan_queue, unum)
   end
 end
 
@@ -169,7 +198,7 @@ function M.fluid_temp_key_decode(key)
   if idx ~= nil then
     return string.sub(key, 1, idx - 1), tonumber(string.sub(key, idx + 1)) / 1000
   end
-  return nil, nil
+  return key, nil
 end
 
 -- mark a fluid/temp combo as missing
@@ -462,18 +491,6 @@ function M.increment_item_count(item_name, delta)
   global.mod.items[item_name] = count + delta
 end
 
-function M.get_scan_queue_size()
-  return global.mod.scan_queue.size
-end
-
-function M.scan_queue_pop()
-  return Queue.pop_random(global.mod.scan_queue, global.mod.rand)
-end
-
-function M.scan_queue_push(unit_number)
-  Queue.push(global.mod.scan_queue, unit_number)
-end
-
 function M.get_player_info(player_index)
   local info = global.mod.player_info[player_index]
   if info == nil then
@@ -560,6 +577,118 @@ function M.resolve_name(name)
 
   return nil
 end
+
+function M.update_queue_log()
+  game.print(string.format("ative: %s  inactive: %s", global.mod.scan_queue.size, global.mod.scan_queue_inactive.size))
+end
+
+function M.update_queue_dual(update_entity)
+  local active_cnt = 13
+  local inactive_cnt = 7
+  local updated_entities = {}
+
+  -- peek the first entry. If we haven't processed it, then pop and return it.
+  local function pop_from_q(q)
+    local unum = Queue.get_front(q)
+    if unum ~= nil and updated_entities[unum] == nil then
+      updated_entities[unum] = true
+      return Queue.pop(q)
+    end
+    return nil
+  end
+
+  for _ = 1, active_cnt + inactive_cnt do
+    local unit_number
+    if active_cnt > 0 then
+      active_cnt = active_cnt - 1
+      unit_number = pop_from_q(global.mod.scan_queue)
+    end
+    if unit_number == nil then
+      unit_number = pop_from_q(global.mod.scan_queue_inactive)
+      if unit_number == nil then
+        unit_number = pop_from_q(global.mod.scan_queue)
+        if unit_number == nil then
+          break
+        end
+      end
+    end
+
+    local status = update_entity(unit_number)
+    if status == M.UPDATE_STATUS.UPDATED then
+      Queue.push(global.mod.scan_queue, unit_number)
+    elseif status == M.UPDATE_STATUS.NOT_UPDATED then
+      Queue.push(global.mod.scan_queue_inactive, unit_number)
+    end
+  end
+end
+
+function M.update_queue_multi(update_entity)
+  local weight_fast = 10
+  local weight_med = 6
+  local weight_slow = 4
+  local MAX_ENTITIES_TO_UPDATE = (weight_fast + weight_med + weight_slow)
+  local updated_entities = {}
+
+  local function inner_update_entity(unit_number)
+    if updated_entities[unit_number] ~= nil then
+      return M.UPDATE_STATUS.ALREADY_UPDATED
+    end
+    updated_entities[unit_number] = true
+    return update_entity(unit_number)
+  end
+
+  for _ = 1, MAX_ENTITIES_TO_UPDATE do
+    local unit_number
+    if weight_slow > 0 then
+      weight_slow = weight_slow - 1
+      unit_number = Queue.pop(global.mod.scan_queue_slow)
+    end
+    if unit_number == nil and weight_med > 0 then
+      weight_med = weight_med - 1
+      unit_number = Queue.pop(global.mod.scan_queue_med)
+    end
+    if unit_number == nil then
+      unit_number = Queue.pop(global.mod.scan_queue_fast)
+    end
+    if unit_number == nil then
+      unit_number = Queue.pop(global.mod.scan_queue_med)
+    end
+    if unit_number == nil then
+      unit_number = Queue.pop(global.mod.scan_queue_slow)
+    end
+    if unit_number == nil then
+      break
+    end
+
+    local status = inner_update_entity(unit_number)
+    if status == M.UPDATE_STATUS.NOT_UPDATED or
+       status == M.UPDATE_STATUS.UPDATED or
+       status == M.UPDATE_STATUS.ALREADY_UPDATED
+    then
+      -- update service_count
+      local service_count = global.mod.entity_service_counts[unit_number] or 0
+      if status == M.UPDATE_STATUS.NOT_UPDATED then
+        service_count = service_count - 1
+      elseif status == M.UPDATE_STATUS.UPDATED  then
+        service_count = math.max(0, service_count) + 1
+      end
+      global.mod.entity_service_counts[unit_number] = service_count
+
+      if service_count >= 2 then
+        Queue.push(global.mod.scan_queue_fast, unit_number)
+      elseif service_count < -60 then
+        Queue.push(global.mod.scan_queue_slow, unit_number)
+      else
+        Queue.push(global.mod.scan_queue_med, unit_number)
+      end
+    end
+  end
+
+  -- finally, swap a random entity to the front of the queue to introduce randomness in update order.
+  Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
+end
+
+M.update_queue = M.update_queue_dual
 
 function M.log_entity(title, entity)
   if entity ~= nil then
@@ -661,11 +790,20 @@ function M.resolve_name(name)
   local prot = game.tile_prototypes[name]
   if prot ~= nil then
     local mp = prot.mineable_properties
-    if mp.minable and #mp.products > 0 then
+    if mp.minable and #mp.products == 1 then
       return mp.products[1].name
     end
   end
 
+  -- FIXME: figure out how to not hard-code this
+  if name == "curved-rail" then
+    return "rail", 4
+  end
+  if name == "straight-rail" then
+    return "rail", 1
+  end
+
+  game.print(string.format("Unable to resolve %s", name))
   return nil
 end
 

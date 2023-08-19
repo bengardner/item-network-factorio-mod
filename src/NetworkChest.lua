@@ -473,7 +473,7 @@ local function update_network_chest_unconfigured_unlocked(info, inv, contents)
 
   -- if there are any leftovers, we put them back and lock the chest
   if next(leftovers) ~= nil then
-    GlobalState.log_entity("UNCONF LOCK", info.entity)
+    --GlobalState.log_entity("UNCONF LOCK", info.entity)
     info.locked_items = leftovers
     inv_unconfigured_lock(inv, leftovers, info.recent_items)
     status = GlobalState.UPDATE_STATUS.UPDATED
@@ -522,11 +522,11 @@ local function update_network_chest_unconfigured_locked(info, inv, contents)
   -- See if we can unlock the chest (chest is empty)
   if next(leftovers) == nil then
     -- the chest is now empty, so unlock it
-    GlobalState.log_entity("UNCONF UNLOCK", info.entity)
+    --GlobalState.log_entity("UNCONF UNLOCK", info.entity)
     inv_reset(inv)
   else
     -- need to re-lock the chest
-    GlobalState.log_entity("UNCONF RE-LOCK", info.entity)
+    --GlobalState.log_entity("UNCONF RE-LOCK", info.entity)
     inv_unconfigured_lock(inv, leftovers, info.recent_items)
   end
 
@@ -604,7 +604,9 @@ local function inv_configured_lock(info, inv, contents)
   end
   -- add the contents and set the bar to lock
   for name, count in pairs(contents) do
-    inv.insert({name=name, count=count})
+    if count > 0 then
+      inv.insert({name=name, count=count})
+    end
   end
   inv.set_bar(bar_idx)
 end

@@ -557,6 +557,21 @@ local function items_list_sort(left, right)
   return left.count > right.count
 end
 
+local function limit_compare_fluid(left, right)
+  if left.item < right.item then
+    return true
+  end
+  if left.item > right.item then
+    return false
+  end
+  return left.temp < right.temp
+end
+
+local function limit_compare_item(left, right)
+  -- we want to compare in the Factorio way - by group and then name
+  return left.item < right.item
+end
+
 function M.get_list_of_items(view_type)
   local items = {}
 
@@ -597,14 +612,22 @@ function M.get_list_of_items(view_type)
       add_item({ item = fluid_name, count = count, temp = temp })
     end
   elseif view_type == "limits" then
+    local fluids = {}
     for item_name, count in pairs(M.get_limit_items()) do
       local nn, tt = GlobalState.fluid_temp_key_decode(item_name)
       if tt ~= nil then
-        table.insert(items, { item = nn, temp = tt, count = count })
+        table.insert(fluids, { item = nn, temp = tt, count = count })
       else
         table.insert(items, { item = item_name, count = count })
       end
     end
+    table.sort(fluids, limit_compare_fluid)
+    table.sort(items, limit_compare_item)
+    table.insert(fluids, "break")
+    for _, ent in ipairs(items) do
+      table.insert(fluids, ent)
+    end
+    return fluids
   end
 
   table.sort(items, items_list_sort)
@@ -619,11 +642,18 @@ function M.get_rows_of_items(view_type)
   local row = {}
 
   for _, item in ipairs(items) do
-    if #row == max_row_count then
+    if type(item) == "string" then
+      if #row > 0 then
+        table.insert(rows, row)
+        row = {}
+      end
+    elseif #row == max_row_count then
       table.insert(rows, row)
       row = {}
+      table.insert(row, item)
+    else
+      table.insert(row, item)
     end
-    table.insert(row, item)
   end
 
   if #row > 0 then

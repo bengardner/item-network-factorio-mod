@@ -711,7 +711,7 @@ local function update_network_chest_configured_locked(info, inv, contents)
   else
     -- the list of locked items changed, so we need to re-lock the chest
     info.locked_items = locked_items
-    inv_configured_lock(inv, info, contents)
+    inv_configured_lock(info, inv, contents)
   end
 
   return GlobalState.UPDATE_STATUS.UPDATED

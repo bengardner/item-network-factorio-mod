@@ -37,7 +37,7 @@ function M.open_main_frame(player_index)
   +--------------------------------------------------+
   | Network View ||||||||||||||||||||||||||||| [R][X]|
   +--------------------------------------------------+
-  | Items | Fluids | Shortages |                     | <- tabs
+  | Items | Fluids | Shortages | Limits |            | <- tabs
   +--------------------------------------------------+
   | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] | <- content
     ... repeated ...
@@ -113,10 +113,14 @@ function M.open_main_frame(player_index)
   local tab_item = tabbed_pane.add { type = "tab", caption = "Items" }
   local tab_fluid = tabbed_pane.add { type = "tab", caption = "Fluids" }
   local tab_shortage = tabbed_pane.add { type = "tab", caption = "Shortages" }
+  local tab_limits = tabbed_pane.add{type="tab", caption="Limits"}
 
   tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
+
+  -- FIXME: "limits" should use a different layout
+  tabbed_pane.add_tab(tab_limits, build_item_page(tabbed_pane, false))
 
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1
@@ -134,6 +138,7 @@ local tab_idx_to_view_type = {
   "item",
   "fluid",
   "shortage",
+  "limits",
 }
 
 local function get_item_localized_name(item)
@@ -173,6 +178,14 @@ function M.update_items(player_index)
     item_flow.destroy()
   end
 
+  if net_view.view_type == "limits" then
+    M.render_tab_limits(main_flow)
+    return
+  end
+
+  local view_type = net_view.view_type
+  local is_item = view_type == "item"
+
   item_flow = main_flow.add({
     type = "scroll-pane",
     direction = "vertical",
@@ -182,6 +195,62 @@ function M.update_items(player_index)
   item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
 
   local rows = M.get_rows_of_items(net_view.view_type)
+local function table_count(tab)
+  local cnt = 0
+  for _, _ in pairs(tab) do
+    cnt = cnt + 1
+  end
+  return cnt
+end
+
+function M.get_limit_items()
+  local limits = GlobalState.get_limits()
+  local items = GlobalState.get_items()
+
+  game.print(string.format("get_limit_items: items=%s limits=%s", table_count(items), table_count(limits)))
+
+  -- default to "infinity" for anything in the network without a limit
+  for name, _ in pairs(items) do
+    if limits[name] == nil then
+      limits[name] = 2000000000 -- 2 billion means infinite ?
+      game.print(string.format("added limit for %s %s", name, limits[name]))
+    else
+      game.print(string.format("have limit for %s %s", name, limits[name]))
+    end
+  end
+  return limits
+end
+local function find_sprite_path(name)
+  for _, pfx in ipairs({"item", "fluid"}) do
+    local tmp = string.format("%s/%s", pfx, name)
+    if game.is_valid_sprite_path(tmp) then
+      return tmp
+    end
+  end
+  return "item/item-unknown"
+end
+
+local function startswith(text, prefix)
+  return text:find(prefix, 1, true) == 1
+end
+
+function M.render_tab_limits(main_flow)
+  -- create the item grid display
+  local item_flow = main_flow.add({
+    type = "scroll-pane",
+    direction = "vertical",
+    name = UiConstants.NV_ITEM_FLOW,
+    vertical_scroll_policy = "always",
+  })
+  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+
+  --[[
+    Strategy: anything in the network appears in the list. If there is no limit, then show infinity.
+    Any item/liquid that has a limit will have an icon.
+    Show one row of blank boxes that can be clicked to bring up an item selection window with a limit bar on the bottom.
+  ]]
+
+  local rows = M.get_rows_of_items("limits")
   for _, row in ipairs(rows) do
     local item_h_stack = item_flow.add({
       type = "flow",
@@ -220,6 +289,7 @@ function M.update_items(player_index)
           { "format-degrees-c", string.format("%.0f", item.temp) },
         }
       end
+
       local item_view = item_h_stack.add({
         type = "sprite-button",
         elem_type = elem_type,
@@ -228,10 +298,37 @@ function M.update_items(player_index)
       })
       item_view.number = item.count
     end
+      -- TODO: fill the rest with blanks
+  end
+  -- add one blank row
+  local item_h_stack = item_flow.add({
+    type = "flow",
+    direction = "horizontal",
+  })
+
+  for _ = 1, 8 do
+    item_h_stack.add{
+      type = "choose-elem-button",
+      elem_type = "item",
+      --elem_filters = { filter= },
+      sprite = 'utility/slot',
+      --hovered_sprite = 'utility/slot',
+      --clicked_sprite = 'utility/slot',
+      --style = "choose-elem-button",
+      --tooltip = { "gui.search" },
+      --tags = { event = UiConstants.NV_SEARCH_BTN },
+    }
   end
 end
 
+-- sort so that negative numbers show up first and everything else is largest-to-smallest
 local function items_list_sort(left, right)
+  if left.count < 0 then
+    return true
+  end
+  if right.count < 0 then
+    return false
+  end
   return left.count > right.count
 end
 
@@ -245,6 +342,8 @@ function M.get_list_of_items(view_type)
   end
 
   if view_type == "item" then
+    -- add one for dropping item stacks
+    table.insert(items, { item = "empty-slot", count=-1 })
     local items_to_display = GlobalState.get_items()
     for item_name, item_count in pairs(items_to_display) do
       if item_count > 0 then
@@ -272,6 +371,13 @@ function M.get_list_of_items(view_type)
       local fluid_name, temp = GlobalState.fluid_temp_key_decode(fluid_key)
       add_item({ item = fluid_name, count = count, temp = temp })
     end
+  elseif view_type == "limits" then
+
+    for item_name, count in pairs(M.get_limit_items()) do
+      table.insert(items, { item = item_name, count = count })
+      game.print(string.format("limit %s %s", item_name, count))
+    end
+    game.print(string.format("Found %s limit items", #items))
   end
 
   table.sort(items, items_list_sort)

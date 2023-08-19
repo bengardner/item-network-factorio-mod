@@ -91,6 +91,23 @@ function M.inner_setup()
     end
     global.mod.has_run_fluid_temp_conversion = true
   end
+
+  if global.mod.item_limits == nil then
+    global.mod.item_limits = M.get_default_limits()
+  end
+end
+
+function M.get_default_limits()
+  local limits = {}
+  -- check recipes ?
+  --for _, prot in pairs(game.recipe_prototypes) do
+  --
+  --end
+  return limits
+end
+
+function M.get_limits()
+  return global.mod.item_limits
 end
 
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }

@@ -682,6 +682,7 @@ function M.resolve_name(name)
     return "rail", 1
   end
 
+  game.print(string.format("Unable to resolve %s", name))
   return nil
 end
 
@@ -690,8 +691,9 @@ function M.update_queue_log()
 end
 
 function M.update_queue_dual(update_entity)
-  local active_cnt = 13
-  local inactive_cnt = 7
+  local MAX_ENTITIES_TO_UPDATE = settings.global
+    ["item-network-number-of-entities-per-tick"]
+    .value
   local updated_entities = {}
 
   -- peek the first entry. If we haven't processed it, then pop and return it.
@@ -704,13 +706,18 @@ function M.update_queue_dual(update_entity)
     return nil
   end
 
-  for _ = 1, active_cnt + inactive_cnt do
+  local toggle = true
+  for _ = 1, MAX_ENTITIES_TO_UPDATE do
     local unit_number
-    if active_cnt > 0 then
-      active_cnt = active_cnt - 1
+    if toggle then
       unit_number = pop_from_q(global.mod.scan_queue)
-    end
-    if unit_number == nil then
+      if unit_number == nil then
+        unit_number = pop_from_q(global.mod.scan_queue_inactive)
+        if unit_number == nil then
+          break
+        end
+      end
+    else
       unit_number = pop_from_q(global.mod.scan_queue_inactive)
       if unit_number == nil then
         unit_number = pop_from_q(global.mod.scan_queue)
@@ -719,6 +726,7 @@ function M.update_queue_dual(update_entity)
         end
       end
     end
+    toggle = not toggle
 
     local status = update_entity(unit_number)
     if status == M.UPDATE_STATUS.UPDATED then
@@ -819,7 +827,7 @@ function M.auto_network_chest(entity)
   local requests = {}
   local provides = {}
 
-  local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
+  --local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
 
   M.log_entity("*** auto-scan", entity)
 
@@ -830,7 +838,7 @@ function M.auto_network_chest(entity)
   game.print(string.format(" ++ found %s entities", #entities))
 
   -- NOTE: is seems like the inserter doesn't set pickup_target or drop_target until it needs to
-
+--[[
   local function log_entities_at(title, pos, exclude_ent)
     local nn = entity.surface.find_entities_filtered{ position=pos, radius=0.1 }
     for _, ent in ipairs(nn) do
@@ -839,7 +847,7 @@ function M.auto_network_chest(entity)
       end
     end
   end
-
+]]
   for idx, ent in ipairs(entities) do
     if ent.unit_number ~= nil then
       if ent.drop_target == entity then
@@ -899,32 +907,6 @@ function M.auto_network_chest(entity)
 
   -- REVISIT: do we need to scan for loaders?
   return requests, provides
-end
-
--- translate a tile name to the item name ("stone-path" => "stone-brick")
-function M.resolve_name(name)
-  if game.item_prototypes[name] ~= nil or game.fluid_prototypes[name] ~= nil then
-    return name
-  end
-
-  local prot = game.tile_prototypes[name]
-  if prot ~= nil then
-    local mp = prot.mineable_properties
-    if mp.minable and #mp.products == 1 then
-      return mp.products[1].name
-    end
-  end
-
-  -- FIXME: figure out how to not hard-code this
-  if name == "curved-rail" then
-    return "rail", 4
-  end
-  if name == "straight-rail" then
-    return "rail", 1
-  end
-
-  game.print(string.format("Unable to resolve %s", name))
-  return nil
 end
 
 return M

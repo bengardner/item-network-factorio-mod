@@ -318,6 +318,45 @@ local function get_fluid_localized_name(fluid)
   return info.localised_name
 end
 
+local function find_sprite_path(name)
+  -- need to try each prefix that we might store in the item network
+  for _, pfx in ipairs({"item", "fluid"}) do
+    local tmp = string.format("%s/%s", pfx, name)
+    if game.is_valid_sprite_path(tmp) then
+      return tmp
+    end
+  end
+  return "item/item-unknown"
+end
+
+local function startswith(text, prefix)
+  return text:find(prefix, 1, true) == 1
+end
+
+local function item_tooltip(name, count, show_transfer)
+  local tooltip = {
+    "",
+    get_item_localized_name(name),
+    ": ",
+    count
+  }
+  if show_transfer == true then
+    table.insert(tooltip, "\nLeft click to transfer to character inventory")
+  end
+  return tooltip
+end
+
+local function fluid_tooltip(name, temp, count)
+  return {
+    "",
+    get_fluid_localized_name(name),
+    ": ",
+    string.format("%.0f", count),
+    " at ",
+    { "format-degrees-c", string.format("%.0f", temp) },
+  }
+end
+
 function M.update_items(player_index)
   local ui = GlobalState.get_ui_state(player_index)
   local net_view = ui.net_view
@@ -496,46 +535,18 @@ function M.render_tab_limits(main_flow)
       direction = "horizontal",
     })
     for _, item in ipairs(row) do
-      local item_name
+      local sprite_path = find_sprite_path(item.item)
+      local def = {
+        type = "sprite-button",
+        sprite = sprite_path,
+        tags = { event = UiConstants.NV_LIMIT_ITEM, item = item.item, temp=item.temp },
+      }
+
       local tooltip
-      local sprite_path
-      local elem_type
-      if item.temp == nil then
-        elem_type = "item"
-        if game.item_prototypes[item.item] == nil then
-          item_name = item.item or "Unknown Item"
-          sprite_path = nil
-        else
-          item_name = game.item_prototypes[item.item].localised_name
-          sprite_path = "item/" .. item.item
-        end
-        tooltip = { "", item_name, ": ", item.count }
+      if startswith(sprite_path, "item") then
+        tooltip = item_tooltip(item.item, item.count)
       else
-        elem_type = "fluid"
-        if game.fluid_prototypes[item.item] == nil then
-          item_name = item.item or "Unknown Fluid"
-          sprite_path = nil
-        else
-          item_name = game.fluid_prototypes[item.item].localised_name
-          sprite_path = "fluid/" .. item.item
-        end
-        tooltip = {
-          "",
-          item_name,
-          ": ",
-          string.format("%.0f", item.count),
-          " at ",
-          { "format-degrees-c", string.format("%.0f", item.temp) },
-        }
-
-        if startswith(sprite_path, "item") then
-          def.tooltip = item_tooltip(item.item, item.count)
-        else
-          def.tooltip = fluid_tooltip(item.item, item.temp or 10, item.count)
-        end
-
-        local item_view = item_h_stack.add(def)
-        item_view.number = item.count
+        tooltip = fluid_tooltip(item.item, item.temp or 10, item.count)
       end
       table.insert(tooltip, "\nLeft click to edit.\nRight click to remove/revert to defaults.")
       def.tooltip = tooltip

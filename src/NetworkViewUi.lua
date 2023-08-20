@@ -6,11 +6,156 @@ local M = {}
 M.WIDTH = 490
 M.HEIGHT = 500
 
--- Builds the GUI for the item, fluid, and shortage tabs.
+--[[
+  Builds the GUI for the item, fluid, and shortage tabs.
+  This page contains one element named "item_flow", which is later populated with sprite-buttons.
+]]
 local function build_item_page(parent)
   local main_flow = parent.add({
     type = "flow",
     direction = "vertical",
+  })
+
+  local item_flow = main_flow.add({
+    type = "scroll-pane",
+    direction = "vertical",
+    name = "item_flow", --UiConstants.NV_ITEM_FLOW,
+    vertical_scroll_policy = "always",
+  })
+  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+
+  return main_flow
+end
+
+--[[
+  Builds the GUI for the limits tab.
+  This page contains an element named "item_flow", which is later populated with sprite-buttons.
+  It also contains a row for editing limits.
+
+  +-----------------------------------------+
+  | [I] [I] [I] [I] [I] [I] [I] [I] [I] [I] |
+  ...
+  | [I] [I] [I] [I] [I] [I] [I] [I] [I] [I] |
+  +-----------------------------------------+
+  | [i/f] [IE] [limit]               [save] | <- item
+  | [i/f] [FE] [temp] [limit]        [save] | <- fluid
+  +-----------------------------------------+
+
+  It then has another row, which contains
+    * an "choose-elem-button"
+    * a label for the "old/current limit"
+    * a "transfer to the new limit" button
+    * a textbox for entering a new limit
+    * a save button
+
+  The first hack will leave out the transfer button and put the current limit
+  in the new_limit textbox.
+]]
+local function build_limit_page(parent)
+  local main_flow = parent.add({
+    type = "flow",
+    direction = "vertical",
+  })
+
+  local item_flow = main_flow.add({
+    type = "scroll-pane",
+    direction = "vertical",
+    name = "item_flow",
+    vertical_scroll_policy = "always",
+  })
+  --item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - (82 + 64) }
+  item_flow.style.vertically_stretchable = true
+  item_flow.style.horizontally_stretchable = true
+
+  local edit_flow = main_flow.add({
+    type = "flow",
+    direction = "horizontal",
+    name = "edit_flow",
+  })
+  edit_flow.style.size = { width = M.WIDTH - 30, height = 48 }
+  edit_flow.style.vertical_align = "center"
+  edit_flow.style.left_padding = 4
+  edit_flow.style.right_padding = 4
+
+  -- this chooses whether we show 'item_edit_flow' or 'fluid_edit_flow'
+  local dropdown = edit_flow.add({
+    type = "drop-down",
+    caption = "item or Fluid",
+    name = "elem_type_dropdown",
+    selected_index = 1,
+    items = { "item", "fluid" },
+    tags = { event = UiConstants.NV_LIMIT_TYPE },
+  })
+  --dropdown.style.horizontally_squashable = true
+  dropdown.style.width = 75
+
+  -- this gets tricky: we create the "item" and "fluid" edit stuff and hide fluid
+  local item_edit_flow = edit_flow.add({
+    type = "flow",
+    direction = "horizontal",
+    name = "item_edit",
+  })
+  local fluid_edit_flow = edit_flow.add({
+    type = "flow",
+    direction = "horizontal",
+    name = "fluid_edit",
+  })
+  fluid_edit_flow.visible = false
+  fluid_edit_flow.style.vertical_align = "center"
+
+  -- add the item selector
+  item_edit_flow.add({
+    type = "choose-elem-button",
+    elem_type = "item",
+    name = "elem_choose",
+    tooltop = { "", "Click to select an item or click an existing item above" },
+    tags = { event = UiConstants.NV_LIMIT_SELECT_ITEM },
+  })
+
+  -- add the fluid selector and temperature
+  fluid_edit_flow.add({
+    type = "choose-elem-button",
+    elem_type = "fluid",
+    name = "elem_choose",
+    tooltop = { "", "Click to select an item or click an existing item above" },
+    tags = { event = UiConstants.NV_LIMIT_SELECT_FLUID },
+  })
+  fluid_edit_flow.add({
+    type = "label",
+    caption = "Temp",
+  })
+  local tf_temp = fluid_edit_flow.add({
+    type = "textfield",
+    text = "0",
+    numeric = true,
+    name = "temperature",
+  })
+  tf_temp.style.width = 75
+
+  -- the current/new limit (shared)
+  edit_flow.add({
+    type = "label",
+    caption = "Limit",
+  })
+  local tf_limit = edit_flow.add({
+    type = "textfield",
+    text = "0",
+    numeric = true,
+    name = "new_limit",
+  })
+  tf_limit.style.width = 100
+
+  local pad = edit_flow.add({ type= "empty-widget" })
+  pad.style.horizontally_stretchable = true
+
+  -- add save button
+  edit_flow.add({
+    type = "sprite-button",
+    sprite = "utility/enter",
+    tooltip = { "", "Update limit" },
+    name = "item_save",
+    style = "frame_action_button",
+    tags = { event = UiConstants.NV_LIMIT_SAVE },
   })
 
   return main_flow
@@ -37,26 +182,21 @@ function M.open_main_frame(player_index)
   +--------------------------------------------------+
   | Network View ||||||||||||||||||||||||||||| [R][X]|
   +--------------------------------------------------+
-  | Items | Fluids | Shortages |                     | <- tabs
+  | Items | Fluids | Shortages | Limits |            | <- tabs
   +--------------------------------------------------+
-  | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] | <- content
+  | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] | <- tab content
     ... repeated ...
   | [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I]  [I] |
   +--------------------------------------------------+
 
   [R] is refresh button and [X] is close. [I] are item icons with the number overlay.
-  I want the ||||| stuff to make the window draggable.
-  Right now, I can get it to look right, but it isn't draggable.
-  OR I can omit the [R][X] buttons make it draggable.
+  The ||||| stuff makes the window draggable.
   ]]
 
   -- create the main window
   local frame = player.gui.screen.add({
     type = "frame",
     name = UiConstants.NV_FRAME,
-    -- enabling the frame caption enables dragging, but
-    -- doesn't allow the buttons to be on the top line
-    --caption = "Network View",
   })
   player.opened = frame
   frame.style.size = { width, height }
@@ -113,10 +253,12 @@ function M.open_main_frame(player_index)
   local tab_item = tabbed_pane.add { type = "tab", caption = "Items" }
   local tab_fluid = tabbed_pane.add { type = "tab", caption = "Fluids" }
   local tab_shortage = tabbed_pane.add { type = "tab", caption = "Shortages" }
+  local tab_limits = tabbed_pane.add{type="tab", caption="Limits"}
 
   tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
+  tabbed_pane.add_tab(tab_limits, build_limit_page(tabbed_pane))
 
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1
@@ -134,6 +276,7 @@ local tab_idx_to_view_type = {
   "item",
   "fluid",
   "shortage",
+  "limits",
 }
 
 local function get_item_localized_name(item)
@@ -154,6 +297,45 @@ local function get_fluid_localized_name(fluid)
   return info.localised_name
 end
 
+local function find_sprite_path(name)
+  -- need to try each prefix that we might store in the item network
+  for _, pfx in ipairs({"item", "fluid"}) do
+    local tmp = string.format("%s/%s", pfx, name)
+    if game.is_valid_sprite_path(tmp) then
+      return tmp
+    end
+  end
+  return "item/item-unknown"
+end
+
+local function startswith(text, prefix)
+  return text:find(prefix, 1, true) == 1
+end
+
+local function item_tooltip(name, count, show_transfer)
+  local tooltip = {
+    "",
+    get_item_localized_name(name),
+    ": ",
+    count
+  }
+  if show_transfer == true then
+    table.insert(tooltip, "\nLeft click to transfer to character inventory")
+  end
+  return tooltip
+end
+
+local function fluid_tooltip(name, temp, count)
+  return {
+    "",
+    get_fluid_localized_name(name),
+    ": ",
+    string.format("%.0f", count),
+    " at ",
+    { "format-degrees-c", string.format("%.0f", temp) },
+  }
+end
+
 function M.update_items(player_index)
   local ui = GlobalState.get_ui_state(player_index)
   local net_view = ui.net_view
@@ -168,64 +350,115 @@ function M.update_items(player_index)
     return
   end
 
-  local item_flow = main_flow[UiConstants.NV_ITEM_FLOW]
-  if item_flow ~= nil then
-    item_flow.destroy()
+  local item_flow = main_flow.item_flow
+  if item_flow == nil then
+    return
+  end
+  item_flow.clear()
+
+  if net_view.view_type == "limits" then
+    M.render_tab_limits(main_flow)
+    return
   end
 
-  item_flow = main_flow.add({
-    type = "scroll-pane",
-    direction = "vertical",
-    name = UiConstants.NV_ITEM_FLOW,
-    vertical_scroll_policy = "always",
-  })
-  item_flow.style.size = { width = M.WIDTH - 30, height = M.HEIGHT - 82 }
+  local view_type = net_view.view_type
+  local is_item = view_type == "item"
 
-  local rows = M.get_rows_of_items(net_view.view_type)
+  local h_stack_def = {
+    type = "flow",
+    direction = "horizontal",
+  }
+
+  local rows = M.get_rows_of_items(view_type)
+  for _, row in ipairs(rows) do
+    local item_h_stack = item_flow.add(h_stack_def)
+    for _, item in ipairs(row) do
+      -- -1 is filtered out and used to mean an "add" slot
+      if item.count < 0 then
+        item_h_stack.add({
+          type = "sprite-button",
+          sprite = "utility/slot_icon_resource_black",
+          tags = { event = UiConstants.NV_ITEM_SPRITE },
+          -- FIXME: needs translation tag
+          tooltip = { "", "Left-click with an item stack to add to the network" },
+        })
+      else
+        local sprite_path = find_sprite_path(item.item)
+        local def = {
+          type = "sprite-button",
+          sprite = sprite_path,
+        }
+        if item.temp ~= nil then
+          def.tooltip = fluid_tooltip(item.item, item.temp, item.count)
+        else
+          def.tooltip = item_tooltip(item.item, item.count, is_item)
+          if is_item then
+            def.tags = { event = UiConstants.NV_ITEM_SPRITE, item = item.item }
+          end
+        end
+        local item_view = item_h_stack.add(def)
+        item_view.number = item.count
+      end
+    end
+  end
+end
+
+function M.get_limit_items()
+  local limits = GlobalState.get_limits()
+
+  -- add a limit for any item/fluid that we have that doesn't have a limit
+  for name, _ in pairs(GlobalState.get_items()) do
+    if limits[name] == nil then
+      limits[name] = GlobalState.get_default_limit(name)
+    end
+  end
+  for name, temp_info in pairs(GlobalState.get_fluids()) do
+    for temp, _ in pairs(temp_info) do
+      local key = GlobalState.fluid_temp_key_encode(name, temp)
+      if limits[key] == nil then
+        limits[key] = GlobalState.get_default_limit(key)
+      end
+    end
+  end
+  return limits
+end
+
+function M.render_tab_limits(main_flow)
+  -- create the item grid display
+  local item_flow = main_flow.item_flow
+
+  item_flow.clear()
+
+  --[[
+    Strategy: anything in the network appears in the list. If there is no limit, then show infinity.
+    Any item/liquid that has a limit will have an icon.
+    Show one row of blank boxes that can be clicked to bring up an item selection window with a limit bar on the bottom.
+  ]]
+
+  local rows = M.get_rows_of_items("limits")
   for _, row in ipairs(rows) do
     local item_h_stack = item_flow.add({
       type = "flow",
       direction = "horizontal",
     })
     for _, item in ipairs(row) do
-      local item_name
-      local tooltip
-      local sprite_path
-      local elem_type
-      if item.temp == nil then
-        elem_type = "item"
-        if game.item_prototypes[item.item] == nil then
-          item_name = item.item or "Unknown Item"
-          sprite_path = nil
-        else
-          item_name = game.item_prototypes[item.item].localised_name
-          sprite_path = "item/" .. item.item
-        end
-        tooltip = { "", item_name, ": ", item.count }
-      else
-        elem_type = "fluid"
-        if game.fluid_prototypes[item.item] == nil then
-          item_name = item.item or "Unknown Fluid"
-          sprite_path = nil
-        else
-          item_name = game.fluid_prototypes[item.item].localised_name
-          sprite_path = "fluid/" .. item.item
-        end
-        tooltip = {
-          "",
-          item_name,
-          ": ",
-          string.format("%.0f", item.count),
-          " at ",
-          { "format-degrees-c", string.format("%.0f", item.temp) },
-        }
-      end
-      local item_view = item_h_stack.add({
+      local sprite_path = find_sprite_path(item.item)
+      local def = {
         type = "sprite-button",
-        elem_type = elem_type,
         sprite = sprite_path,
-        tooltip = tooltip,
-      })
+        tags = { event = UiConstants.NV_LIMIT_ITEM, item = item.item, temp=item.temp },
+      }
+
+      local tooltip
+      if startswith(sprite_path, "item") then
+        tooltip = item_tooltip(item.item, item.count)
+      else
+        tooltip = fluid_tooltip(item.item, item.temp or 10, item.count)
+      end
+      table.insert(tooltip, "\nLeft click to edit.\nRight click to remove/revert to defaults.")
+      def.tooltip = tooltip
+
+      local item_view = item_h_stack.add(def)
       item_view.number = item.count
     end
   end
@@ -233,6 +466,21 @@ end
 
 local function items_list_sort(left, right)
   return left.count > right.count
+end
+
+local function limit_compare_fluid(left, right)
+  if left.item < right.item then
+    return true
+  end
+  if left.item > right.item then
+    return false
+  end
+  return left.temp < right.temp
+end
+
+local function limit_compare_item(left, right)
+  -- we want to compare in the Factorio way - by group and then name
+  return left.item < right.item
 end
 
 function M.get_list_of_items(view_type)
@@ -268,6 +516,23 @@ function M.get_list_of_items(view_type)
       local fluid_name, temp = GlobalState.fluid_temp_key_decode(fluid_key)
       table.insert(items, { item = fluid_name, count = count, temp = temp })
     end
+  elseif view_type == "limits" then
+    local fluids = {}
+    for item_name, count in pairs(M.get_limit_items()) do
+      local nn, tt = GlobalState.fluid_temp_key_decode(item_name)
+      if tt ~= nil then
+        table.insert(fluids, { item = nn, temp = tt, count = count })
+      else
+        table.insert(items, { item = item_name, count = count })
+      end
+    end
+    table.sort(fluids, limit_compare_fluid)
+    table.sort(items, limit_compare_item)
+    table.insert(fluids, "break")
+    for _, ent in ipairs(items) do
+      table.insert(fluids, ent)
+    end
+    return fluids
   end
 
   table.sort(items, items_list_sort)
@@ -282,11 +547,18 @@ function M.get_rows_of_items(view_type)
   local row = {}
 
   for _, item in ipairs(items) do
-    if #row == max_row_count then
+    if type(item) == "string" then
+      if #row > 0 then
+        table.insert(rows, row)
+        row = {}
+      end
+    elseif #row == max_row_count then
       table.insert(rows, row)
       row = {}
+      table.insert(row, item)
+    else
+      table.insert(row, item)
     end
-    table.insert(row, item)
   end
 
   if #row > 0 then
@@ -311,6 +583,139 @@ function M.on_every_5_seconds(event)
   for player_index, _ in pairs(GlobalState.get_player_info_map()) do
     M.update_items(player_index)
   end
+end
+
+-- grab and verify the player
+local function limit_event_prep(event)
+  local player = game.get_player(event.player_index)
+  if player == nil then
+    return
+  end
+  local ui = GlobalState.get_ui_state(event.player_index)
+  if ui.net_view == nil then
+    return
+  end
+  if ui.net_view.view_type ~= "limits" then
+    return
+  end
+  local tabbed_pane = ui.net_view.tabbed_pane
+  local main_flow = tabbed_pane.tabs[tabbed_pane.selected_tab_index].content
+  if main_flow == nil then
+    return
+  end
+  return player,  main_flow.edit_flow
+end
+
+-- type_idx: 1=item 2=fluid
+local function limit_set_edit_type(edit_flow, type_idx)
+  edit_flow.fluid_edit.visible = (type_idx == 2)
+  edit_flow.item_edit.visible = (type_idx ~= 2)
+  edit_flow.elem_type_dropdown.selected_index = type_idx
+end
+
+local function limit_set_edit_item(edit_flow, item_name, item_temp)
+  if item_name ~= nil then
+
+    local prot = game.item_prototypes[item_name]
+    if prot ~= nil then
+      local item_limit = GlobalState.get_limit(item_name)
+      limit_set_edit_type(edit_flow, 1)
+      edit_flow.item_edit.elem_choose.elem_value = item_name
+      edit_flow.new_limit.text = string.format("%s", item_limit)
+      edit_flow.new_limit.select(1, 0)
+    else
+      prot = game.fluid_prototypes[item_name]
+      if prot ~= nil then
+        if item_temp == nil then
+          item_temp = prot.default_temperature
+        end
+        local key = GlobalState.fluid_temp_key_encode(item_name, item_temp)
+        local item_limit = GlobalState.get_limit(key)
+        limit_set_edit_type(edit_flow, 2)
+        edit_flow.fluid_edit.elem_choose.elem_value = item_name
+        edit_flow.fluid_edit.temperature.text = string.format("%s", item_temp)
+        edit_flow.fluid_edit.temperature.select(1, 0)
+        edit_flow.new_limit.text = string.format("%s", item_limit)
+        edit_flow.new_limit.select(1, 0)
+      end
+    end
+  end
+end
+
+-- the selection change. refresh the current limit text box
+function M.on_limit_item_elem_changed(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
+    return
+  end
+
+  limit_set_edit_item(edit_flow, edit_flow.item_edit.elem_choose.elem_value)
+end
+
+-- the selection change. refresh the current limit text box
+function M.on_limit_fluid_elem_changed(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
+    return
+  end
+
+  limit_set_edit_item(edit_flow, edit_flow.fluid_edit.elem_choose.elem_value)
+end
+
+-- read the limit and save to the limits structure
+function M.on_limit_save(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
+    return
+  end
+
+  if edit_flow.item_edit.visible then
+    if GlobalState.set_limit(edit_flow.item_edit.elem_choose.elem_value, edit_flow.new_limit.text) then
+      M.update_items(player.index)
+    end
+  else
+    local fluid_name = edit_flow.fluid_edit.elem_choose.elem_value
+    local fluid_temp = tonumber(edit_flow.fluid_edit.temperature.text)
+    if fluid_name ~= nil and fluid_temp ~= nil then
+      local key = GlobalState.fluid_temp_key_encode(fluid_name, fluid_temp)
+      if GlobalState.set_limit(key, edit_flow.new_limit.text) then
+        M.update_items(player.index)
+      end
+    end
+  end
+end
+
+function M.on_limit_click_item(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
+    return
+  end
+
+  local item_name = event.element.tags.item
+  local item_temp = event.element.tags.temp
+  if item_name ~= nil then
+    -- transfer the existing info to the edit box
+    limit_set_edit_item(edit_flow, item_name, item_temp)
+
+    if event.button == defines.mouse_button_type.right then
+      if game.item_prototypes[item_name] ~= nil then
+        GlobalState.clear_limit(item_name)
+      elseif item_temp ~= nil and game.fluid_prototypes[item_name] ~= nil then
+        local key = GlobalState.fluid_temp_key_encode(item_name, item_temp)
+        GlobalState.clear_limit(key)
+      end
+      M.update_items(player.index)
+    end
+  end
+end
+
+function M.on_limit_elem_type(event, element)
+  local player, edit_flow = limit_event_prep(event)
+  if player == nil then
+    return
+  end
+
+  limit_set_edit_type(edit_flow, edit_flow.elem_type_dropdown.selected_index)
 end
 
 return M

@@ -91,6 +91,124 @@ function M.inner_setup()
     end
     global.mod.has_run_fluid_temp_conversion = true
   end
+
+  if global.mod.item_limits == nil then
+    global.mod.item_limits = {}
+    M.limit_scan()
+  end
+end
+
+-- scan existing tanks and chests and use the max "give" limit as the item limit
+function M.limit_scan(item)
+  local limits = global.mod.item_limits
+
+  for _, info in pairs(global.mod.chests) do
+    if info.requests ~= nil then
+      for _, req in ipairs(info.requests) do
+        if req.type == "give" then
+          local old_limit = limits[req.item]
+          if old_limit == nil or old_limit < req.limit then
+            limits[req.item] = req.limit
+          end
+        end
+      end
+    end
+  end
+
+  for _, info in pairs(global.mod.tanks) do
+    local config = info.config
+    if config ~= nil then
+      if config.type == "give" then
+        if config.temperature ~= nil and config.fluid ~= nil then
+          local key = M.fluid_temp_key_encode(config.fluid, config.temperature)
+          local old_limit = limits[key]
+          if old_limit == nil or old_limit < config.limit then
+            limits[config.fluid] = config.limit
+          end
+        end
+      end
+    end
+  end
+end
+
+-- return a hopefully sane default to help new players
+function M.get_default_limit(item)
+  local prot = game.item_prototypes[item]
+  if prot == nil then
+    -- probably a fluid
+    return 500000
+  end
+  if prot.subgroup == "raw-resource" then
+    -- example: iron-ore
+    return 1000000 -- 1 M
+  elseif prot.subgroup == "raw-material" then
+    -- example: iron-plate
+    return 50000 -- 50 K
+  elseif prot.subgroup == "ammo" then
+    return 10 * prot.stack_size
+  elseif prot.subgroup == "armor" then
+    return 1
+  elseif prot.subgroup == "transport" then
+    return 1
+  elseif prot.subgroup == "defensive-structure" then
+    return 1
+  elseif prot.subgroup == "capsule" then
+    return 50
+  elseif prot.subgroup == "energy" then
+    return 50
+  elseif prot.subgroup == "circuit-network" then
+    return 50
+  elseif prot.subgroup == "gun" then
+    return 5
+  elseif prot.subgroup == "intermediate-product" then
+    return 10 * prot.stack_size
+  elseif prot.subgroup == "production-machine" then
+    return 50
+  elseif prot.subgroup == "belt" then
+    return 200
+  elseif prot.subgroup == "inserter" then
+    return 200
+  elseif prot.subgroup == "train-transport" then
+    if prot.name == "rail" then
+      return 500
+    else
+      -- locomotives, train cars, signals, etc
+      return prot.stack_size
+    end
+  else
+    return 2 * prot.stack_size
+  end
+end
+
+function M.get_limits()
+  return global.mod.item_limits
+end
+
+function M.get_limit(item_name)
+  return global.mod.item_limits[item_name] or M.get_default_limit(item_name)
+end
+
+function M.clear_limit(item_name)
+  global.mod.item_limits[item_name] = nil
+end
+
+-- set the limit, return true if it changed
+function M.set_limit(item_name, value)
+  if type(item_name) == "string" then
+    -- don't use get_limit()
+    local old_value = global.mod.item_limits[item_name]
+    value = tonumber(value)
+    if value ~= nil and value ~= old_value then
+      global.mod.item_limits[item_name] = value
+      return true
+    end
+  end
+  return false
+end
+
+-- get the number of items that we are allowed to put in the network
+function M.get_insert_count(item_name)
+  return math.max(0, M.get_limit(item_name) - M.get_item_count(item_name))
 end
 
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }
@@ -152,7 +270,7 @@ function M.fluid_temp_key_decode(key)
   if idx ~= nil then
     return string.sub(key, 1, idx - 1), tonumber(string.sub(key, idx + 1)) / 1000
   end
-  return nil, nil
+  return key, nil
 end
 
 -- mark a fluid/temp combo as missing

@@ -257,6 +257,41 @@ M.event_handlers = {
     end,
   },
   {
+    name = UiConstants.NV_LIMIT_ITEM,
+    event = "on_gui_click",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_click_item(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_SELECT_ITEM,
+    event = "on_gui_elem_changed",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_item_elem_changed(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_SELECT_FLUID,
+    event = "on_gui_elem_changed",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_fluid_elem_changed(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_TYPE,
+    event = "on_gui_selection_state_changed",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_elem_type(event, element)
+    end
+  },
+  {
+    name = UiConstants.NV_LIMIT_SAVE,
+    event = "on_gui_click",
+    handler = function(event, element)
+      NetworkViewUi.on_limit_save(event, element)
+    end
+  },
+  {
     name = UiConstants.NV_CLOSE_BTN,
     event = "on_gui_click",
     handler = function(event, element)

@@ -437,7 +437,8 @@ local function update_network_chest(info)
       end
     else
       local n_give = current_count
-      local n_take = math.max(0, request.limit - network_count)
+      --local n_take = math.max(0, request.limit - network_count)
+      local n_take = math.max(0, GlobalState.get_limit(request.item) - network_count)
       local n_transfer = math.min(n_take, n_give)
       if n_transfer > 0 then
         status = GlobalState.UPDATE_STATUS.UPDATED
@@ -520,8 +521,10 @@ local function update_tank(info)
           fluid_instance.name,
           fluid_instance.temperature
         )
+        local key = GlobalState.fluid_temp_key_encode(fluid_instance.name, fluid_instance.temperature)
+        local gl_limit = GlobalState.get_limit(key)
         local n_give = math.max(0, fluid_instance.amount)
-        local n_take = math.max(0, limit - current_count)
+        local n_take = math.max(0, math.max(limit, gl_limit) - current_count)
         local n_transfer = math.floor(math.min(n_give, n_take))
         if n_transfer > 0 then
           status = GlobalState.UPDATE_STATUS.UPDATED
@@ -808,6 +811,10 @@ end
 
 function M.on_gui_selected_tab_changed(event)
   UiHandlers.handle_generic_gui_event(event, "on_gui_selected_tab_changed")
+end
+
+function M.on_gui_selection_state_changed(event)
+  UiHandlers.handle_generic_gui_event(event, "on_gui_selection_state_changed")
 end
 
 function M.add_take_btn_enabled()

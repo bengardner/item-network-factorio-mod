@@ -460,7 +460,9 @@ function Modal.try_to_confirm(player_index)
     return
   end
 
-  if buffer <= 0 or limit < 0 then
+  -- "take" must buffer something, "give" can have no buffer.
+  -- give limit=0 means use global limit
+  if buffer < 0 or limit < 0 or (request_type == "take" and buffer <= 0) then
     return
   end
 

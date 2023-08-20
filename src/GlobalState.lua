@@ -129,7 +129,7 @@ function M.reset_queues()
   end
 end
 
--- scan existing tanks and chest and use the max give limit as the item limit
+-- scan existing tanks and chests and use the max "give" limit as the item limit
 function M.limit_scan(item)
   game.print("limit scan")
   local limits = global.mod.item_limits

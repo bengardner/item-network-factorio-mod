@@ -391,4 +391,9 @@ EventDispatch.add(
   M.on_player_cursor_stack_changed
 )
 
+EventDispatch.add(
+  "in_open_test_view",
+  M.in_open_test_view
+)
+
 return M

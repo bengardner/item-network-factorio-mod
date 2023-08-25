@@ -117,11 +117,6 @@ local function main()
     NetworkChest.in_open_network_view
   )
 
-  script.on_event(
-    "in_open_test_view",
-    TestGui.in_open_test_view
-  )
-
   script.on_nth_tick(1, NetworkChest.onTick)
   script.on_nth_tick(60, NetworkChest.onTick_60)
   -- script.on_nth_tick(60 * 3, NetworkChest.on_every_5_seconds)

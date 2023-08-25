@@ -422,9 +422,13 @@ local function inv_unconfigured_lock(inv, leftovers, recent_items)
   local f_idx = 1
   for item, _ in pairs(recent_items) do
     -- create a filtered slot for each item we have seen recently that doesn't have items
+    -- Limit to the most recent 8 items
     if leftovers[item] == nil then
       inv.set_filter(f_idx, item)
       f_idx = f_idx + 1
+      if f_idx > #inv - 4 then
+        break
+      end
     end
   end
 
@@ -1004,6 +1008,10 @@ end
 -------------------------------------------
 
 function M.on_gui_click(event)
+  -- log the gui click
+  --local el = event.element
+  --game.print(string.format("on_gui_click: name=[%s] type=[%s]", el.name, el.type))
+
   UiHandlers.handle_generic_gui_event(event, "on_gui_click")
 end
 

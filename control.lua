@@ -1,4 +1,6 @@
 local NetworkChest = require "src.NetworkChest"
+local TestGui = require "src.NetworkViewUi_test"
+local UiHandlers = require "src.UiHandlers"
 
 local function main()
   -- create
@@ -113,6 +115,11 @@ local function main()
   script.on_event(
     "in_open_network_view",
     NetworkChest.in_open_network_view
+  )
+
+  script.on_event(
+    "in_open_test_view",
+    TestGui.in_open_test_view
   )
 
   script.on_nth_tick(1, NetworkChest.onTick)

@@ -5,6 +5,8 @@ local constants = require "src.constants"
 
 local M = {}
 
+M.get_default_limit = require("src.DefaultLimits").get_default_limit
+
 local setup_has_run = false
 
 function M.setup()
@@ -164,53 +166,11 @@ function M.limit_scan(item)
   end
 end
 
--- return a hopefully sane default to help new players
-function M.get_default_limit(item)
-  local prot = game.item_prototypes[item]
-  if prot == nil then
-    -- probably a fluid
-    return 500000
+local function str_endswith(text, tag)
+  if type(text) == "string" and type(tag) == "string" then
+    return #tag <= #text and string.sub(text, 1 + #text - #tag) == tag
   end
-  if prot.subgroup == "raw-resource" then
-    -- example: iron-ore
-    return 1000000 -- 1 M
-  elseif prot.subgroup == "raw-material" then
-    -- example: iron-plate
-    return 50000 -- 50 K
-  elseif prot.subgroup == "ammo" then
-    return 10 * prot.stack_size
-  elseif prot.subgroup == "armor" then
-    return 1
-  elseif prot.subgroup == "transport" then
-    return 1
-  elseif prot.subgroup == "defensive-structure" then
-    return 1
-  elseif prot.subgroup == "capsule" then
-    return 50
-  elseif prot.subgroup == "energy" then
-    return 50
-  elseif prot.subgroup == "circuit-network" then
-    return 50
-  elseif prot.subgroup == "gun" then
-    return 5
-  elseif prot.subgroup == "intermediate-product" then
-    return 10 * prot.stack_size
-  elseif prot.subgroup == "production-machine" then
-    return 50
-  elseif prot.subgroup == "belt" then
-    return 200
-  elseif prot.subgroup == "inserter" then
-    return 200
-  elseif prot.subgroup == "train-transport" then
-    if prot.name == "rail" then
-      return 500
-    else
-      -- locomotives, train cars, signals, etc
-      return prot.stack_size
-    end
-  else
-    return 2 * prot.stack_size
-  end
+  return false
 end
 
 function M.get_limits()

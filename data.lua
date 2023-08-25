@@ -10,18 +10,66 @@ function M.main()
   M.add_network_tank()
 
   data:extend(Hotkeys.hotkeys)
+
+  data:extend({
+    { type = "sprite", name = "inet_slot_empty_inset", filename = Paths.graphics .. "/icons/slot-inset-empty.png", width=40, height=40, flags = { "gui-icon" } },
+    { type = "sprite", name = "inet_slot_empty_outset", filename = Paths.graphics .. "/icons/slot-outset-empty.png", width=40, height=40, flags = { "gui-icon" } },
+  })
+
+  local fab = Paths.graphics .. "/frame-action-icons.png"
+
+  data:extend({
+    { type = "sprite", name = "flib_pin_black", filename = fab, position = { 0, 0 }, size = 32, flags = { "gui-icon" } },
+    { type = "sprite", name = "flib_pin_white", filename = fab, position = { 32, 0 }, size = 32, flags = { "gui-icon" } },
+    {
+      type = "sprite",
+      name = "flib_pin_disabled",
+      filename = fab,
+      position = { 64, 0 },
+      size = 32,
+      flags = { "gui-icon" },
+    },
+    {
+      type = "sprite",
+      name = "flib_settings_black",
+      filename = fab,
+      position = { 0, 32 },
+      size = 32,
+      flags = { "gui-icon" },
+    },
+    {
+      type = "sprite",
+      name = "flib_settings_white",
+      filename = fab,
+      position = { 32, 32 },
+      size = 32,
+      flags = { "gui-icon" },
+    },
+    {
+      type = "sprite",
+      name = "flib_settings_disabled",
+      filename = fab,
+      position = { 64, 32 },
+      size = 32,
+      flags = { "gui-icon" },
+    },
+  })
 end
 
 function M.add_network_chest()
   local name = "network-chest"
-  local override_item_name = "steel-chest"
+  local override_item_name = "iron-chest"
   local overwrite_prototype = "container"
 
   local entity = table.deepcopy(data.raw[overwrite_prototype]
     [override_item_name])
   entity.name = name
   entity.picture.layers[1].filename = Paths.graphics .. "/entities/network-chest-steel.png"
+
   entity.picture.layers[1].hr_version.filename = Paths.graphics .. "/entities/hr-network-chest-steel.png"
+  entity.picture.layers[1].hr_version.height = 80
+  entity.picture.layers[1].hr_version.width = 64
+
   entity.icon = Paths.graphics .. "/icons/network-chest-steel.png"
   entity.inventory_size = constants.NUM_INVENTORY_SLOTS
   entity.inventory_type = "with_filters_and_bar"
@@ -30,8 +78,10 @@ function M.add_network_chest()
   local item = table.deepcopy(data.raw["item"][override_item_name])
   item.name = name
   item.place_result = name
-  item.icon = Paths.graphics .. "/items/network-chest.png"
-  item.size = 64
+  --item.icon = Paths.graphics .. "/items/network-chest.png"
+  --item.size = 64
+  item.icon = Paths.graphics .. "/icons/network-chest-steel.png"
+  item.order = "a[items]-0[network-chest]"
 
   local recipe = {
     name = name,

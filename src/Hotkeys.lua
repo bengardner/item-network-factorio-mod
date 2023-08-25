@@ -17,6 +17,11 @@ M.hotkeys = {
     name = "in_open_network_view",
     key_sequence = "CONTROL + SHIFT + N",
   },
+  {
+    type = "custom-input",
+    name = "in_open_test_view",
+    key_sequence = "CONTROL + SHIFT + H",
+  },
 }
 
 return M

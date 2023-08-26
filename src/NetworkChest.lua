@@ -663,6 +663,13 @@ local function update_network_chest_configured_common(info, inv, contents)
             status = GlobalState.UPDATE_STATUS.UPDATED
             contents[req.item] = n_have + n_transfer
             GlobalState.set_item_count(req.item, n_innet - n_transfer)
+
+            --[[ If we filled the entire buffer AND there is enough in the net for another buffer, then
+            we are probably not requesting enough. Up the buffer size by 1.
+            ]]
+            if n_transfer == req.buffer and n_innet > n_transfer * 4 then
+              req.buffer = req.buffer + 1
+            end
           end
         else
           GlobalState.missing_item_set(req.item, info.entity.unit_number, n_want - n_have)

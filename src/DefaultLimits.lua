@@ -247,8 +247,8 @@ function M.get_default_limit(item)
     end
     return 2 * prot.stack_size
   else
-    game.print(string.format("default limit: fell off the bottom name=[%s] group=[%s] subgroup=[%s]",
-      prot.name, prot.group.name, prot.subgroup.name))
+    -- game.print(string.format("default limit: fell off the bottom name=[%s] group=[%s] subgroup=[%s]",
+    --   prot.name, prot.group.name, prot.subgroup.name))
     return 2 * prot.stack_size
   end
 end

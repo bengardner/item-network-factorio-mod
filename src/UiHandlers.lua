@@ -4,6 +4,7 @@ local GlobalState = require "src.GlobalState"
 local NetworkTankGui = require "src.NetworkTankGui"
 local NetworkViewUi = require "src.NetworkViewUi"
 local NetworkViewUi_test = require "src.NetworkViewUi_test"
+local log = require("src.log_console").log
 
 local M = {}
 
@@ -325,42 +326,6 @@ M.event_handlers = {
       NetworkViewUi.on_gui_pin(event)
     end,
   },
-  {
-    name = UiConstants.NV_CLOSE_BTN,
-    event = "on_gui_click",
-    handler = function(event, element)
-      NetworkViewUi.on_gui_close(event)
-    end,
-  },
-  {
-    name = UiConstants.CHARINV_ITEM,
-    event = "on_gui_click",
-    handler = function(event, element)
-      NetworkViewUi_test.on_click_char_inv_item(event)
-    end,
-  },
-  {
-    name = UiConstants.CHARINV_HAND,
-    event = "on_gui_click",
-    handler = function(event, element)
-      NetworkViewUi_test.on_click_char_inv_hand(event)
-    end,
-  },
-  {
-    name = UiConstants.CHARINV_SLOT,
-    event = "on_gui_click",
-    handler = function(event, element)
-      NetworkViewUi_test.on_click_char_inv_slot(event)
-    end,
-  },
-
-  --[[
-  {
-    name = "TestGui.on_player_main_inventory_changed"
-    event = "on_player_main_inventory_changed",
-    handler = function (event, )??
-  },
-  ]]
 }
 
 M.handler_map = {}

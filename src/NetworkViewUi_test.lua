@@ -1,6 +1,9 @@
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local EventDispatch  = require "src.EventDispatch"
+local UiCharacterInventory = require "src.UiCharacterInventory"
+local UiNetworkView_Items = require "src.UiNetworkView_Items"
+local log = require("src.log_console").log
 
 local M = {}
 
@@ -9,6 +12,7 @@ M.container_height = 836
 
 -- hotkey handler
 function M.in_open_test_view(event)
+  log("in_open_test_view: event.name=%s", event.name)
   M.create_gui(event.player_index)
 end
 
@@ -19,16 +23,33 @@ end
 --  Destroy the GUI for a player
 function M.destroy_gui(player_index)
   local ui = GlobalState.get_ui_state(player_index)
-  if ui.test_view ~= nil then
-    ui.test_view.elems.main_window.destroy()
+  local self = ui.test_view
+  if self ~= nil then
+    -- break the link to prevent future events
     ui.test_view = nil
+
+    -- call destructor on any child classes
+    for _, ch in pairs(self.children) do
+      if type(ch.destroy) == "function" then
+        ch.destroy(ch)
+      end
+    end
+
+    local player = self.player
+    if player.opened == self.elems.main_window then
+      player.opened = nil
+    end
+
+    -- destroy the UI
+    self.elems.main_window.destroy()
   end
 end
 
 --  Create and show the GUI for a player
 function M.create_gui(player_index)
   local ui = GlobalState.get_ui_state(player_index)
-  if ui.test_view ~= nil then
+  local old_self = ui.test_view
+  if old_self ~= nil then
     -- hotkey toggles the GUI
     M.destroy_gui(player_index)
     return
@@ -47,10 +68,9 @@ function M.create_gui(player_index)
   -- create the main window
   elems.main_window = player.gui.screen.add({
     type = "frame",
-    name = UiConstants.NV_FRAME,
+    name = UiConstants.TV_MAIN_FRAME,
     style = "inset_frame_container_frame",
   })
-  player.opened = elems.main_window
   elems.main_window.auto_center = true
   elems.main_window.style.horizontally_stretchable = true
   elems.main_window.style.vertically_stretchable = true
@@ -141,106 +161,16 @@ function M.create_gui(player_index)
     elems = elems,
     pinned = false,
     player = player,
+    children = {},
   }
   ui.test_view = self
+  player.opened = elems.main_window
 
-  M.add_character_inventory(self, left_pane)
-  M.add_chest_inventory(self, mid_pane)
+  self.children.character_inventory = UiCharacterInventory.create(left_pane, player)
+  --M.add_character_inventory(self, left_pane)
+  self.children.network_items = UiNetworkView_Items.create(mid_pane, player)
+  --M.add_chest_inventory(self, mid_pane)
   M.add_net_inventory(self, right_pane)
-end
-
-function M.add_character_inventory(self, frame)
-  local vert_flow = frame.add({
-    type = "flow",
-    direction = "vertical",
-  })
-  local inv_frame = vert_flow.add({
-    type = "frame",
-    style = "character_inventory_frame",
-  })
-  local scroll_pane = inv_frame.add({
-    type = "scroll-pane",
-    style = "character_inventory_scroll_pane",
-  }) -- 424, 728 or 400,712
-  scroll_pane.style.width = 424
-
-  --[[
-Looks like:
-character_gui_left_side
-character_inventory_scroll_pane
-scroll_pane
-  + horizontal_flow (400 x 28)
-     + slot_button_that_fits_textline
-     + color_indicator
-  +
-  ]]
-  local hdr = scroll_pane.add({
-    type = "flow",
-    direction = "horizontal",
-  })
-  hdr.style.size = { 400, 28 }
-
-  hdr.add({
-    type = "label",
-    caption = "Character",
-    style = "inventory_label",
-  })
-
-  local item_table = scroll_pane.add({
-    type = "table",
-    name = "item_table",
-    style = "slot_table",
-    column_count = 10
-  })
-  self.elems.table_character_inventory = item_table
-
-  M.refresh_character_inventory(self)
-end
-
-function M.refresh_character_inventory(self)
-  local item_table = self.elems.table_character_inventory
-  item_table.clear()
-
-  local inv = self.player.get_main_inventory()
-  if inv == nil then
-    return
-  end
-  inv.sort_and_merge()
-
- -- draw the hand instead of a blank entry if reasons
-  local hand_slot = 0
-  if self.player.hand_location ~= nil and inv.index == self.player.hand_location.inventory then
-    hand_slot = self.player.hand_location.slot
-  end
-
-  for idx = 1, #inv do
-    local stack = inv[idx]
-    if idx == hand_slot then
-      item_table.add({
-        type = "sprite-button",
-        sprite = "utility/hand",
-        hovered_sprite = "utility/hand_black",
-        clicked_sprite = "utility/hand_black",
-        style = "inventory_slot",
-        tags = { event = UiConstants.CHARINV_HAND, slot = idx },
-      })
-    elseif stack.valid_for_read then
-      local inst = item_table.add({
-        type = "sprite-button",
-        sprite = "item/" .. stack.name,
-        style = "inventory_slot",
-        tags = { event = UiConstants.CHARINV_ITEM, item = stack.name, slot = idx },
-      })
-      inst.number = stack.count
-    else
-      item_table.add({
-        type = "sprite-button",
-        sprite = "utility/slot_icon_resource",
-        style = "inventory_slot",
-        tags = { event = UiConstants.CHARINV_SLOT, slot = idx },
-      })
-    end
-  end
 end
 
 function M.add_chest_inventory(self, frame)
@@ -281,119 +211,86 @@ frame: (invisible frame)
 
 ]]
 
-function M.charinv_click_item(self, event)
-  local element = event.element
-  if element == nil then
-    return
-  end
-  local player = self.player
-  local inv = player.get_main_inventory()
-
-  -- log the event
-  local ctext = "cursor is empty"
-  if not player.is_cursor_empty() then
-    ctext = string.format("cursor name=%s count=%s", player.cursor_stack.name, player.cursor_stack.count)
-  end
-  game.print(string.format("Clicked on slot %s [%s] button=%s alt=%s control=%s shift=%s - %s",
-    element.tags.slot, element.tags.item,
-    event.button, event.alt, event.control, event.shift, ctext))
-
-  -- left click => pick up / drop stack
-  -- right click => pick up half-stack
-  -- shift + left => transfer stack to "other" inventory
-  -- control + left => transfer all to "other" inventory
-  -- shift + right => transfer half stack
-  -- control + right => hald transfer
-  -- middle mouse => create filter on slot
-  --
-
-  if event.button == defines.mouse_button_type.left then
-    if not player.is_cursor_empty() then
-      -- drop cursor into inventory
-      inv.insert({name = player.cursor_stack.name, count = player.cursor_stack.count})
-      player.cursor_stack.clear()
+-- toggles the "pinned" status and updates the window
+function M.toggle_pinned(self)
+  self.pinned = not self.pinned
+  if self.pinned then
+    self.elems.close_button.tooltip = { "gui.close" }
+    self.elems.pin_button.sprite = "flib_pin_black"
+    self.elems.pin_button.style = "flib_selected_frame_action_button"
+    if self.player.opened == self.elems.main_window then
+      self.player.opened = nil
     end
-    if element.tags.item ~= nil then
-      player.cursor_stack.transfer_stack(inv[element.tags.slot])
-      self.player.hand_location = { inventory = inv.index, slot = element.tags.slot }
-    end
-  elseif event.button == defines.mouse_button_type.right then
-    -- right click with an empty stack grabs half the stack
-    if player.is_cursor_empty() and element.tags.item ~= nil then
-      local stack = inv[element.tags.slot]
-      if stack.valid_for_read then
-        local half_count = math.ceil(stack.count / 2)
-        player.cursor_stack.set_stack({ name=stack.name, count=half_count })
-        stack.count = stack.count - half_count
+  else
+    self.elems.close_button.tooltip = { "gui.close-instruction" }
+    self.elems.pin_button.sprite = "flib_pin_white"
+    self.elems.pin_button.style = "frame_action_button"
+    self.player.opened = self.elems.main_window
+  end
+end
+
+function M.on_click_refresh_button(event)
+  -- needed to refresh the network item list, which can change rapidly
+  local self = M.get_gui(event.player_index)
+  if self ~= nil then
+    for _, ch in pairs(self.children) do
+      if type(ch.refresh) == "function" then
+        ch.refresh(ch)
       end
     end
   end
 end
 
-function M.charinv_click_hand(self, event)
-  local player = self.player
-  if player.is_cursor_empty() then
-  else
-  end
-end
-
-function M.charinv_click_slot(self, event)
-  local player = self.player
-  if player.is_cursor_empty() then
-  else
-  end
-end
-
-function M.on_click_char_inv_item(event)
+function M.on_click_close_button(event)
   local self = M.get_gui(event.player_index)
   if self ~= nil then
-    M.charinv_click_item(self, event)
+    M.destroy_gui(event.player_index)
   end
 end
 
-function M.on_click_char_inv_hand(event)
+function M.on_click_pin_button(event)
   local self = M.get_gui(event.player_index)
   if self ~= nil then
-    M.charinv_click_item(self, event)
+    M.toggle_pinned(self)
   end
 end
 
-function M.on_click_char_inv_slot(event)
+-- triggered if the GUI is removed from self.player.opened
+function M.on_gui_closed(event)
+  log("on gui closed")
   local self = M.get_gui(event.player_index)
   if self ~= nil then
-    M.charinv_click_item(self, event)
+    if not self.pinned then
+      M.destroy_gui(event.player_index)
+    end
   end
 end
 
-function M.on_player_main_inventory_changed(event)
-  local self = M.get_gui(event.player_index)
-  if self ~= nil then
-    game.print("on_player_main_inventory_changed")
-    M.refresh_character_inventory(self)
-  end
-end
-
-function M.on_player_cursor_stack_changed(event)
-  local self = M.get_gui(event.player_index)
-  if self ~= nil then
-    game.print("on_player_cursor_stack_changed")
-    M.refresh_character_inventory(self)
-  end
-end
-
-EventDispatch.add(
-  defines.events.on_player_main_inventory_changed,
-  M.on_player_main_inventory_changed
-)
-
-EventDispatch.add(
-  defines.events.on_player_cursor_stack_changed,
-  M.on_player_cursor_stack_changed
-)
-
-EventDispatch.add(
-  "in_open_test_view",
-  M.in_open_test_view
-)
+EventDispatch.add({
+  {
+    event = "in_open_test_view",
+    handler = M.in_open_test_view,
+  },
+  {
+    name = UiConstants.TV_PIN_BTN,
+    event = "on_gui_click",
+    handler = M.on_click_pin_button,
+  },
+  {
+    name = UiConstants.TV_CLOSE_BTN,
+    event = "on_gui_click",
+    handler = M.on_click_close_button,
+  },
+  {
+    name = UiConstants.TV_REFRESH_BTN,
+    event = "on_gui_click",
+    handler = M.on_click_refresh_button,
+  },
+  {
+    name = UiConstants.TV_MAIN_FRAME,
+    event = "on_gui_closed",
+    handler = M.on_gui_closed,
+  },
+})
 
 return M

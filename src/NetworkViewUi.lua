@@ -1,10 +1,20 @@
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
+local EventDispatch  = require "src.EventDispatch"
 
 local M = {}
 
 M.WIDTH = 490
 M.HEIGHT = 500
+
+local function gui_get(player_index)
+  local ui = GlobalState.get_ui_state(player_index)
+  return ui.net_view, ui
+end
+
+local function gui_set(player_index, value)
+  GlobalState.get_ui_state(player_index).net_view = value
+end
 
 --[[
   Builds the GUI for the item, fluid, and shortage tabs.
@@ -321,9 +331,6 @@ local function build_test_page(parent)
   item_flow.style.vertically_stretchable = true
   item_flow.style.horizontally_stretchable = true
 
-  local function add_row(sprite)
-  end
-
 
   local edit_flow = main_flow.add({
     type = "flow",
@@ -422,9 +429,9 @@ end
 -------------------------------------------------------------------------------
 
 function M.open_main_frame(player_index)
-  local ui = GlobalState.get_ui_state(player_index)
-  if ui.net_view ~= nil then
-    M.destroy(player_index)
+  local self, ui = gui_get(player_index)
+  if self ~= nil then
+    M.destroy(self)
     return
   end
 
@@ -562,13 +569,14 @@ function M.open_main_frame(player_index)
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1
 
-  ui.net_view = {
+  local self = {
     frame = frame,
     tabbed_pane = tabbed_pane,
     elems = elems,
     pinned = false,
     player = player,
   }
+  gui_set(player_index, self)
 
   M.update_items(player_index)
 end
@@ -647,8 +655,7 @@ local function get_item_shortage_tooltip(name, count)
 end
 
 function M.update_items(player_index)
-  local ui = GlobalState.get_ui_state(player_index)
-  local net_view = ui.net_view
+  local net_view = gui_get(player_index)
   if net_view == nil then
     return
   end
@@ -1081,27 +1088,29 @@ function M.get_list_of_items(view_type)
   return items
 end
 
-function M.destroy(player_index)
-  local ui = GlobalState.get_ui_state(player_index)
-  if ui.net_view ~= nil then
-    ui.net_view.frame.destroy()
-    ui.net_view = nil
+function M.destroy(self)
+  if self ~= nil then
+    self.frame.destroy()
+    gui_set(self.player.index, nil)
   end
 end
 
 function M.on_gui_closed(event)
-  local ui = GlobalState.get_ui_state(event.player_index)
-  if ui.net_view ~= nil then
-    if ui.net_view.pinned then
+  local self = gui_get(event.player_index)
+  if self ~= nil then
+    if self.pinned then
       return
     end
+    M.destroy(self)
   end
-  M.destroy(event.player_index)
 end
 
 -- close button pressed
-function M.on_gui_close(event)
-  M.destroy(event.player_index)
+function M.on_click_close_button(event)
+  local self = gui_get(event.player_index)
+  if self ~= nil then
+    M.destroy(self)
+  end
 end
 
 function M.on_every_5_seconds(event)
@@ -1116,14 +1125,14 @@ local function limit_event_prep(event)
   if player == nil then
     return
   end
-  local ui = GlobalState.get_ui_state(event.player_index)
-  if ui.net_view == nil then
+  local self = gui_get(event.player_index)
+  if self == nil then
     return
   end
-  if ui.net_view.view_type ~= "limits" then
+  if self.view_type ~= "limits" then
     return
   end
-  local tabbed_pane = ui.net_view.tabbed_pane
+  local tabbed_pane = self.tabbed_pane
   local main_flow = tabbed_pane.tabs[tabbed_pane.selected_tab_index].content
   if main_flow == nil then
     return
@@ -1252,7 +1261,6 @@ function M.on_limit_elem_type(event, element)
   limit_set_edit_type(edit_flow, edit_flow.elem_type_dropdown.selected_index)
 end
 
---- @param self  => GlobalState.get_ui_state(player_index).net_view
 function M.toggle_pinned(self)
   -- "Pinning" the GUI will remove it from player.opened, allowing it to coexist with other windows.
   -- I highly recommend implementing this for your GUIs. flib includes the requisite sprites and locale for the button.
@@ -1273,10 +1281,37 @@ function M.toggle_pinned(self)
 end
 
 function M.on_gui_pin(event)
-  local ui = GlobalState.get_ui_state(event.player_index)
-  if ui.net_view ~= nil then
-    M.toggle_pinned(ui.net_view)
+  local self = gui_get(event.player_index)
+  if self ~= nil then
+    M.toggle_pinned(self)
   end
 end
+
+EventDispatch.add({
+  {
+    event = "in_open_test_view",
+    handler = M.in_open_test_view,
+  },
+  {
+    name = UiConstants.NV_PIN_BTN,
+    event = "on_gui_click",
+    handler = M.on_click_pin_button,
+  },
+  {
+    name = UiConstants.NV_CLOSE_BTN,
+    event = "on_gui_click",
+    handler = M.on_click_close_button,
+  },
+  {
+    name = UiConstants.NV_REFRESH_BTN,
+    event = "on_gui_click",
+    handler = M.on_click_refresh_button,
+  },
+  {
+    name = UiConstants.NV_FRAME,
+    event = "on_gui_closed",
+    handler = M.on_gui_closed,
+  },
+})
 
 return M

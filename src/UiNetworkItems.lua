@@ -175,9 +175,6 @@ function NetInv:refresh()
       total_count = total_count + item.count
     end
   end
-  if use_group then
-    item_utils.pad_item_table_row(item_table)
-  end
 
   self.elems.title.caption = string.format("Network Items - %s items, %s total", total_items, total_count)
 end

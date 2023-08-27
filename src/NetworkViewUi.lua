@@ -2,6 +2,7 @@ local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local EventDispatch  = require "src.EventDispatch"
 local UiNetworkItems = require "src.UiNetworkItems"
+local UiNetworkFluid = require "src.UiNetworkFluid"
 
 local M = {}
 
@@ -575,10 +576,14 @@ function M.open_main_frame(player_index)
   local tab_test = tabbed_pane.add{type="tab", caption="Test"}
 
   -- create the content for each tab
-  self.children.network_items = UiNetworkItems.create(tabbed_pane, player, false)
+  self.children.network_items = UiNetworkItems.create(tabbed_pane, player)
   tabbed_pane.add_tab(tab_item, self.children.network_items.frame)
   --tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
-  tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
+
+  self.children.network_fluids = UiNetworkFluid.create(tabbed_pane, player)
+  tabbed_pane.add_tab(tab_fluid, self.children.network_fluids.frame)
+  --tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
+
   tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_limits, build_limit_page(tabbed_pane))
   tabbed_pane.add_tab(tab_test, build_test_page(tabbed_pane))
@@ -683,6 +688,10 @@ function M.update_items(player_index)
   -- for now, intercept the 'item' page and call refresh.
   if self.view_type == "item" then
     self.children.network_items:refresh()
+    return
+  end
+  if self.view_type == "fluid" then
+    self.children.network_fluids:refresh()
     return
   end
 

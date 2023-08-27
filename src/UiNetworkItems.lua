@@ -1,13 +1,27 @@
 --[[
   Creates the Network invetory GuiElement tree under the specified parent GuiElement.
   There can be only one per character,
+
+  Inteface for the module:
+  - M.create(parent, player)
+    Create the GUI element tree as a child of @parent for @player
+
+  Exposed interface for the "instance"
+  - inst.frame
+    This is the top-most GUI element. Useful to assign to a tabbed pane.
+  - inst:destroy()
+    This destroys any data associated with the instance and the GUI.
+  - inst:refresh()
+    This refreshes the data in the display.
 ]]
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local EventDispatch  = require "src.EventDispatch"
 local item_utils = require "src.item_utils"
 
+-- M is the module that supplies 'create()'
 local M = {}
+
 local NetInv = {}
 
 local function gui_get(player_index)
@@ -85,29 +99,27 @@ function M.create(parent, player, show_title)
 end
 
 function NetInv.destroy(self)
+  if self.frame ~= nil then
+    self.frame.destroy() -- destroy the GUI
+    self.frame = nil
+  end
   gui_set(self.player.index, nil)
 end
 
 local function get_list_of_items()
   local items = {}
 
-  local function add_item(item)
-    if game.item_prototypes[item.item] ~= nil or game.fluid_prototypes[item.item] ~= nil then
-      table.insert(items, item)
-    end
-  end
-
-  local items_to_display = GlobalState.get_items()
-  for item_name, item_count in pairs(items_to_display) do
-    if item_count > 0 then
-	    add_item({ item = item_name, count = item_count })
+  for item_name, item_count in pairs(GlobalState.get_items()) do
+    if item_count > 0 and game.item_prototypes[item_name] ~= nil then
+	    table.insert(items, { item = item_name, count = item_count })
     end
   end
 
   return item_utils.entry_list_split_by_group(items)
 end
 
-function M.get_sprite_button_def(item)
+-- REVISIT: this should be in the utils file
+local function get_sprite_button_def(item)
   local tooltip
   local sprite_path
   local tags
@@ -127,7 +139,7 @@ function M.get_sprite_button_def(item)
   }
 end
 
-function NetInv.refresh(self)
+function NetInv:refresh()
   local item_table = self.elems.table_network_items
   item_table.clear()
 
@@ -156,7 +168,7 @@ function NetInv.refresh(self)
         item_utils.pad_item_table_row(item_table)
       end
     else
-      local sprite_button = M.get_sprite_button_def(item)
+      local sprite_button = get_sprite_button_def(item)
       local sprite_button_inst = item_table.add(sprite_button)
       sprite_button_inst.number = item.count
       total_items = total_items + 1
@@ -173,6 +185,7 @@ end
 --[[
   This handles a click on an item sprite in the item view.
   If the cursor has something in it, then the cursor content is dumped into the item network.
+    ctrl + left-click also transfers all items of the same name to the network.
   If the cursor is empty then we grab something from the item network.
     left-click grabs one item.
     shift + left-click grabs one stack.

@@ -1165,7 +1165,7 @@ local function limit_event_prep(event)
   if self.view_type ~= "limits" then
     return
   end
-  local tabbed_pane = self.tabbed_pane
+  local tabbed_pane = self.elems.tabbed_pane
   local main_flow = tabbed_pane.tabs[tabbed_pane.selected_tab_index].content
   if main_flow == nil then
     return

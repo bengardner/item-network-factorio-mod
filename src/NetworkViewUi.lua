@@ -1,6 +1,7 @@
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local EventDispatch  = require "src.EventDispatch"
+local UiNetworkItems = require "src.UiNetworkItems"
 
 local M = {}
 
@@ -427,23 +428,24 @@ local function build_test_page(parent)
 end
 
 -------------------------------------------------------------------------------
-
+-- Create the main GUI frame / window
+-------------------------------------------------------------------------------
 function M.open_main_frame(player_index)
-  local self, ui = gui_get(player_index)
+  -- if we already have a GUI, then destroy it
+  local self = gui_get(player_index)
   if self ~= nil then
     M.destroy(self)
     return
   end
 
+  -- make sure the player is valid
   local player = game.get_player(player_index)
   if player == nil then
     return
   end
 
+  -- log something for debug
   GlobalState.update_queue_log()
-
-  -- important elements
-  local elems = {}
 
   local width = M.WIDTH
   local height = M.HEIGHT + 32
@@ -474,13 +476,23 @@ function M.open_main_frame(player_index)
   frame.style.size = { width, height }
   frame.auto_center = true
 
-  elems.network_view = frame
+  -- table that holds all info for this GUI
+  self = {
+    player = player,
+    frame = frame,
+    elems = { network_view = frame },
+    children = {},
+    pinned = false
+  }
+  local elems = self.elems
 
+  -- need a vertical flow to wrap (header, body)
   local main_flow = frame.add({
     type = "flow",
     direction = "vertical",
   })
 
+  -- create the flow for the header/title bar
   local header_flow = main_flow.add({
     type = "flow",
     direction = "horizontal",
@@ -548,19 +560,24 @@ function M.open_main_frame(player_index)
     tags = { event = UiConstants.NV_PIN_BTN },
   }
 
-  -- add tabbed stuff
+  -- add the tabbed frame
   local tabbed_pane = main_flow.add {
     type = "tabbed-pane",
     tags = { event = UiConstants.NV_TABBED_PANE },
   }
+  elems.tabbed_pane = tabbed_pane
 
+  -- add all the tabs
   local tab_item = tabbed_pane.add { type = "tab", caption = "Items" }
   local tab_fluid = tabbed_pane.add { type = "tab", caption = "Fluids" }
   local tab_shortage = tabbed_pane.add { type = "tab", caption = "Shortages" }
   local tab_limits = tabbed_pane.add{type="tab", caption="Limits"}
   local tab_test = tabbed_pane.add{type="tab", caption="Test"}
 
-  tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
+  -- create the content for each tab
+  self.children.network_items = UiNetworkItems.create(tabbed_pane, player, false)
+  tabbed_pane.add_tab(tab_item, self.children.network_items.frame)
+  --tabbed_pane.add_tab(tab_item, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_fluid, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_shortage, build_item_page(tabbed_pane))
   tabbed_pane.add_tab(tab_limits, build_limit_page(tabbed_pane))
@@ -569,15 +586,10 @@ function M.open_main_frame(player_index)
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1
 
-  local self = {
-    frame = frame,
-    tabbed_pane = tabbed_pane,
-    elems = elems,
-    pinned = false,
-    player = player,
-  }
+  -- save the GUI data for this player
   gui_set(player_index, self)
 
+  -- refresh the page
   M.update_items(player_index)
 end
 
@@ -655,37 +667,52 @@ local function get_item_shortage_tooltip(name, count)
 end
 
 function M.update_items(player_index)
-  local net_view = gui_get(player_index)
-  if net_view == nil then
+  local self = gui_get(player_index)
+  if self == nil then
     return
   end
-  local tabbed_pane = net_view.tabbed_pane
+  local tabbed_pane = self.elems.tabbed_pane
 
-  net_view.view_type = tab_idx_to_view_type[tabbed_pane.selected_tab_index]
+  self.view_type = tab_idx_to_view_type[tabbed_pane.selected_tab_index]
   local main_flow = tabbed_pane.tabs[tabbed_pane.selected_tab_index].content
   if main_flow == nil then
     return
   end
 
-  if net_view.view_type == "test" then
+  -- eventually will store the children controllers in an array with the same index as the tabbed pane
+  -- for now, intercept the 'item' page and call refresh.
+  if self.view_type == "item" then
+    self.children.network_items:refresh()
+    return
+  end
+
+  -- branch off for the test page
+  if self.view_type == "test" then
     M.render_tab_test(main_flow)
     return
   end
 
+  -- all the other pages have "vert_flow.item_flow" that we populate
   if main_flow.vert_flow == nil then
     return
   end
   local item_flow = main_flow.vert_flow.item_flow
+  if item_flow == nil then
+    return
+  end
   item_flow.clear()
 
-  if net_view.view_type == "limits" then
+  -- "limits" uses the same item_flow, but has its own content function
+  if self.view_type == "limits" then
     M.render_tab_limits(main_flow)
     return
   end
 
-  local view_type = net_view.view_type
+  -- this is now only for fluids and shortages
+  local view_type = self.view_type
   local is_item = view_type == "item"
 
+  -- FIXME: not used, since the item page isn't rendered here anymore
   if is_item then
     item_flow.add({
       type = "sprite-button",
@@ -697,6 +724,7 @@ function M.update_items(player_index)
     M.pad_item_table_row(item_flow)
   end
 
+  -- get sorted/split list of items for the fluid and shortage pages
   local items = M.get_list_of_items(view_type)
   for _, item in ipairs(items) do
     if type(item) ~= "table" then
@@ -1090,6 +1118,11 @@ end
 
 function M.destroy(self)
   if self ~= nil then
+    for _, ch in pairs(self.children) do
+      if type(ch.destroy) == "function" then
+        ch.destroy(ch)
+      end
+    end
     self.frame.destroy()
     gui_set(self.player.index, nil)
   end

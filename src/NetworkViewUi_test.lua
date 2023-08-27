@@ -2,7 +2,7 @@ local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local EventDispatch  = require "src.EventDispatch"
 local UiCharacterInventory = require "src.UiCharacterInventory"
-local UiNetworkView_Items = require "src.UiNetworkView_Items"
+local UiNetworkItems = require "src.UiNetworkItems"
 local log = require("src.log_console").log
 
 local M = {}
@@ -168,7 +168,7 @@ function M.create_gui(player_index)
 
   self.children.character_inventory = UiCharacterInventory.create(left_pane, player)
   --M.add_character_inventory(self, left_pane)
-  self.children.network_items = UiNetworkView_Items.create(mid_pane, player)
+  self.children.network_items = UiNetworkItems.create(mid_pane, player)
   --M.add_chest_inventory(self, mid_pane)
   M.add_net_inventory(self, right_pane)
 end

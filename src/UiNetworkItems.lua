@@ -18,10 +18,11 @@ local function gui_set(player_index, value)
   GlobalState.get_ui_state(player_index).UiNetworkItems = value
 end
 
-function M.create(parent, player)
+function M.create(parent, player, show_title)
   local self = {
     player = player,
     elems = {},
+    use_group = true,
   }
 
   -- set index so we can call self:refresh() or M.refresh(self)
@@ -31,13 +32,17 @@ function M.create(parent, player)
     type = "flow",
     direction = "vertical",
   })
+  self.frame = vert_flow
+
   local inv_frame = vert_flow.add({
     type = "frame",
     style = "character_inventory_frame",
+    --style = "inventory_frame",
   })
   local scroll_pane = inv_frame.add({
     type = "scroll-pane",
     style = "character_inventory_scroll_pane",
+    --style = "entity_inventory_scroll_pane",
   }) -- 424, 728 or 400,712
   scroll_pane.style.width = 424
 
@@ -47,10 +52,20 @@ function M.create(parent, player)
   })
   hdr.style.size = { 400, 28 }
 
-  hdr.add({
+  self.elems.title = hdr.add({
     type = "label",
     caption = "Network Items",
     style = "inventory_label",
+  })
+  local hdr_spacer = hdr.add({ type = "empty-widget" })
+  hdr_spacer.style.horizontally_stretchable = true
+
+  self.elems.checkbox = hdr.add({
+    name = UiConstants.NETITEM_GROUP,
+    type = "checkbox",
+    caption = "Group",
+    style = "checkbox",
+    state = true,
   })
 
   local item_table = scroll_pane.add({
@@ -116,6 +131,10 @@ function NetInv.refresh(self)
   local item_table = self.elems.table_network_items
   item_table.clear()
 
+  local total_items = 0
+  local total_count = 0
+  local use_group = self.use_group
+
   -- add a dummy slot for dropping stuff
   item_table.add({
     type = "sprite-button",
@@ -124,20 +143,31 @@ function NetInv.refresh(self)
     tags = { event = UiConstants.NETITEM_SLOT },
     tooltip = { "in_nv.deposit_item_sprite_btn_tooltip" },
   })
-  item_utils.pad_item_table_row(item_table)
+
+  if use_group then
+    item_utils.pad_item_table_row(item_table)
+  end
 
   -- add the items
   local items = get_list_of_items()
   for _, item in ipairs(items) do
     if type(item) ~= "table" then
-      item_utils.pad_item_table_row(item_table)
+      if use_group then
+        item_utils.pad_item_table_row(item_table)
+      end
     else
-      local sprite_button = M.get_sprite_button_def(item, view_type)
+      local sprite_button = M.get_sprite_button_def(item)
       local sprite_button_inst = item_table.add(sprite_button)
       sprite_button_inst.number = item.count
+      total_items = total_items + 1
+      total_count = total_count + item.count
     end
   end
-  item_utils.pad_item_table_row(item_table)
+  if use_group then
+    item_utils.pad_item_table_row(item_table)
+  end
+
+  self.elems.title.caption = string.format("Network Items - %s items, %s total", total_items, total_count)
 end
 
 --[[
@@ -241,6 +271,14 @@ local function on_click_net_inv_slot(event)
   end
 end
 
+local function on_group_check_changed(event)
+  local self = gui_get(event.player_index)
+  if self ~= nil then
+    self.use_group = not self.use_group
+    self:refresh()
+  end
+end
+
 EventDispatch.add({
   {
     name = UiConstants.NETITEM_ITEM,
@@ -251,6 +289,11 @@ EventDispatch.add({
     name = UiConstants.NETITEM_SLOT,
     event = "on_gui_click",
     handler = on_click_net_inv_slot,
+  },
+  {
+    name = UiConstants.NETITEM_GROUP,
+    event = "on_gui_checked_state_changed",
+    handler = on_group_check_changed,
   },
 })
 

@@ -1,6 +1,7 @@
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
-local EventDispatch  = require "src.EventDispatch"
+local Event = require('__stdlib__/stdlib/event/event')
+local Gui = require('__stdlib__/stdlib/event/gui')
 local UiCharacterInventory = require "src.UiCharacterInventory"
 local UiNetworkItems = require "src.UiNetworkItems"
 local log = require("src.log_console").log
@@ -9,12 +10,6 @@ local M = {}
 
 M.container_width = 1424
 M.container_height = 836
-
--- hotkey handler
-function M.in_open_test_view(event)
-  log("in_open_test_view: event.name=%s", event.name)
-  M.create_gui(event.player_index)
-end
 
 function M.get_gui(player_index)
   return GlobalState.get_ui_state(player_index).test_view
@@ -103,31 +98,29 @@ function M.create_gui(player_index)
   header_drag.style.vertically_stretchable = true
 
   header_flow.add {
+    name = UiConstants.TV_REFRESH_BTN,
     type = "sprite-button",
     sprite = "utility/refresh",
     style = "frame_action_button",
     tooltip = { "gui.refresh" },
-    tags = { event = UiConstants.TV_REFRESH_BTN },
   }
 
   elems.close_button = header_flow.add {
-    name = "close_button",
+    name = UiConstants.TV_CLOSE_BTN,
     type = "sprite-button",
     sprite = "utility/close_white",
     hovered_sprite = "utility/close_black",
     clicked_sprite = "utility/close_black",
     style = "close_button",
-    tags = { event = UiConstants.TV_CLOSE_BTN },
   }
 
   elems.pin_button = header_flow.add {
-    name = "pin_button",
+    name = UiConstants.TV_PIN_BTN,
     type = "sprite-button",
     sprite = "flib_pin_white",
     hovered_sprite = "flib_pin_black",
     clicked_sprite = "flib_pin_black",
     style = "frame_action_button",
-    tags = { event = UiConstants.TV_PIN_BTN },
   }
 
   -- add shared body area
@@ -266,31 +259,15 @@ function M.on_gui_closed(event)
   end
 end
 
-EventDispatch.add({
-  {
-    event = "in_open_test_view",
-    handler = M.in_open_test_view,
-  },
-  {
-    name = UiConstants.TV_PIN_BTN,
-    event = "on_gui_click",
-    handler = M.on_click_pin_button,
-  },
-  {
-    name = UiConstants.TV_CLOSE_BTN,
-    event = "on_gui_click",
-    handler = M.on_click_close_button,
-  },
-  {
-    name = UiConstants.TV_REFRESH_BTN,
-    event = "on_gui_click",
-    handler = M.on_click_refresh_button,
-  },
-  {
-    name = UiConstants.TV_MAIN_FRAME,
-    event = "on_gui_closed",
-    handler = M.on_gui_closed,
-  },
-})
+Gui.on_click(UiConstants.TV_PIN_BTN, M.on_click_pin_button)
+Gui.on_click(UiConstants.TV_CLOSE_BTN, M.on_click_close_button)
+Gui.on_click(UiConstants.TV_REFRESH_BTN, M.on_click_refresh_button)
+-- Gui doesn't have on_gui_closed, so add it manually
+Event.register(defines.events.on_gui_closed, M.on_gui_closed, Event.Filters.gui, UiConstants.TV_MAIN_FRAME)
+
+-- hotkey handler
+Event.on_event("in_open_test_view", function (event)
+    M.create_gui(event.player_index)
+  end)
 
 return M

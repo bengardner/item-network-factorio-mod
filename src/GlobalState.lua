@@ -99,6 +99,10 @@ function M.inner_setup()
     global.mod.has_run_fluid_temp_conversion = true
   end
 
+  if global.mod.sensors == nil then
+    global.mod.sensors = {}
+  end
+
   if global.mod.item_limits == nil then
     global.mod.item_limits = {}
     M.limit_scan()
@@ -411,6 +415,20 @@ end
 
 function M.vehicle_del(unit_number)
   global.mod.vehicles[unit_number] = nil
+end
+
+function M.sensor_add(entity)
+  if global.mod.sensors[entity.unit_number] == nil then
+    global.mod.sensors[entity.unit_number] = entity
+  end
+end
+
+function M.sensor_del(entity)
+  global.mod.sensors[entity.unit_number] = entity
+end
+
+function M.sensor_get_list()
+  return global.mod.sensors
 end
 
 function M.register_chest_entity(entity, requests)

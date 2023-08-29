@@ -4,6 +4,7 @@ local UiHandlers = require "src.UiHandlers"
 local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
+local Event = require('__stdlib__/stdlib/event/event')
 local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
 
@@ -1101,12 +1102,126 @@ function M.in_cancel_dialog(event)
   NetworkChestGui.in_cancel_dialog(event)
 end
 
-function M.in_open_network_view(event)
-  NetworkViewUi.open_main_frame(event.player_index)
-end
-
 function M.on_every_5_seconds(event)
   NetworkViewUi.on_every_5_seconds(event)
 end
+
+-------------------------------------------------------------------------------
+-- Register Event Handlers for this module
+
+-- create
+Event.on_event(
+  defines.events.on_built_entity,
+  M.on_built_entity
+)
+Event.on_event(
+  defines.events.script_raised_built,
+  M.script_raised_built
+)
+Event.on_event(
+  defines.events.on_entity_cloned,
+  M.on_entity_cloned
+)
+Event.on_event(
+  defines.events.on_robot_built_entity,
+  M.on_robot_built_entity
+)
+Event.on_event(
+  defines.events.script_raised_revive,
+  M.script_raised_revive
+)
+
+-- delete
+Event.on_event(
+  defines.events.on_pre_player_mined_item,
+  M.generic_destroy_handler
+)
+Event.on_event(
+  defines.events.on_robot_mined_entity,
+  M.generic_destroy_handler
+)
+Event.on_event(
+  defines.events.script_raised_destroy,
+  M.generic_destroy_handler
+)
+Event.on_event(
+  defines.events.on_entity_died,
+  M.on_entity_died
+)
+Event.on_event(
+  defines.events.on_marked_for_deconstruction,
+  M.on_marked_for_deconstruction
+)
+
+Event.on_event(
+  defines.events.on_post_entity_died,
+  M.on_post_entity_died
+)
+
+Event.on_event(
+  defines.events.on_entity_settings_pasted,
+  M.on_entity_settings_pasted
+)
+
+Event.on_event(
+  defines.events.on_player_setup_blueprint,
+  M.on_player_setup_blueprint
+)
+
+-- gui events
+Event.on_event(
+  defines.events.on_gui_click,
+  M.on_gui_click
+)
+Event.on_event(
+  defines.events.on_gui_opened,
+  M.on_gui_opened
+)
+Event.on_event(
+  defines.events.on_gui_closed,
+  M.on_gui_closed
+)
+Event.on_event(
+  defines.events.on_gui_text_changed,
+  M.on_gui_text_changed
+)
+Event.on_event(
+  defines.events.on_gui_elem_changed,
+  M.on_gui_elem_changed
+)
+Event.on_event(
+  defines.events.on_gui_checked_state_changed,
+  M.on_gui_checked_state_changed
+)
+Event.on_event(
+  defines.events.on_gui_confirmed,
+  M.on_gui_confirmed
+)
+Event.on_event(
+  defines.events.on_gui_selected_tab_changed,
+  M.on_gui_selected_tab_changed
+)
+Event.on_event(
+  defines.events.on_gui_selection_state_changed,
+  M.on_gui_selection_state_changed
+)
+
+-- custom events
+Event.on_event(
+  "in_confirm_dialog",
+  M.in_confirm_dialog
+)
+Event.on_event(
+  "in_cancel_dialog",
+  M.in_cancel_dialog
+)
+
+Event.on_nth_tick(1, M.onTick)
+Event.on_nth_tick(60, M.onTick_60)
+-- Event.on_nth_tick(60 * 3, M.on_every_5_seconds)
+
+Event.on_init(function()
+  M.on_init()
+end)
 
 return M

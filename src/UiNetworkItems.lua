@@ -16,7 +16,7 @@
 ]]
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
-local EventDispatch  = require "src.EventDispatch"
+local Gui = require('__stdlib__/stdlib/event/gui')
 local item_utils = require "src.item_utils"
 
 -- M is the module that supplies 'create()'
@@ -36,7 +36,7 @@ function M.create(parent, player, show_title)
   local self = {
     player = player,
     elems = {},
-    use_group = true,
+    use_group = false,
   }
 
   -- set index so we can call self:refresh() or M.refresh(self)
@@ -88,7 +88,7 @@ function M.create(parent, player, show_title)
     style = "slot_table",
     column_count = 10
   })
-  self.elems.table_network_items = item_table
+  self.elems.item_table = item_table
 
   gui_set(player.index, self)
 
@@ -115,6 +115,8 @@ local function get_list_of_items()
     end
   end
 
+  table.sort(items, item_utils.entry_compare_items)
+
   return item_utils.entry_list_split_by_group(items)
 end
 
@@ -123,15 +125,19 @@ local function get_sprite_button_def(item)
   local tooltip
   local sprite_path
   local tags
+  local name
   if item.temp == nil then
-    tooltip = item_utils.get_item_tooltip(item.item, item.count)
-    tags = { event = UiConstants.NETITEM_ITEM, item = item.item }
+    name = string.format("%s:%s", UiConstants.NETITEM_ITEM, item.item)
+    tooltip = item_utils.get_item_inventory_tooltip(item.item, item.count)
+    tags = { item = item.item }
     sprite_path = "item/" .. item.item
   else
-    tooltip = item_utils.get_fluid_tooltip(item.item, item.temp, item.count)
+    name = string.format("%s:%s@%s", UiConstants.NETITEM_ITEM, item.item, item.temp)
+    tooltip = item_utils.get_fluid_inventory_tooltip(item.item, item.temp, item.count)
     sprite_path = "fluid/" .. item.item
   end
   return {
+    name = name,
     type = "sprite-button",
     sprite = sprite_path,
     tooltip = tooltip,
@@ -140,7 +146,7 @@ local function get_sprite_button_def(item)
 end
 
 function NetInv:refresh()
-  local item_table = self.elems.table_network_items
+  local item_table = self.elems.item_table
   item_table.clear()
 
   local total_items = 0
@@ -149,10 +155,10 @@ function NetInv:refresh()
 
   -- add a dummy slot for dropping stuff
   item_table.add({
+    name = UiConstants.NETITEM_SLOT,
     type = "sprite-button",
     sprite = "utility/slot_icon_resource_black",
     style = "inventory_slot",
-    tags = { event = UiConstants.NETITEM_SLOT },
     tooltip = { "in_nv.deposit_item_sprite_btn_tooltip" },
   })
 
@@ -210,15 +216,25 @@ local function NetInv_click_slot(self, event)
 
     local network_count = GlobalState.get_item_count(item_name)
     local stack_size = game.item_prototypes[item_name].stack_size
+    local n_transfer = 0
 
     if event.button == defines.mouse_button_type.left then
-      -- shift moves a stack, non-shift moves 1 item
-      local n_transfer = 1
+      -- plain=1 item, shift=stack, control=all
+      n_transfer = 1
       if event.shift then
         n_transfer = stack_size
       elseif event.control then
         n_transfer = network_count
       end
+    end
+    if event.button == defines.mouse_button_type.right then
+      -- plain right click = half items
+      if not (event.shift or event.control or event.alt) then
+        n_transfer = math.ceil(network_count / 2)
+      end
+    end
+
+    if n_transfer > 0 then
       -- move one item or stack to player inventory
       n_transfer = math.min(network_count, n_transfer)
       if n_transfer > 0 then
@@ -227,7 +243,7 @@ local function NetInv_click_slot(self, event)
           GlobalState.set_item_count(item_name, network_count - n_moved)
           local count = GlobalState.get_item_count(item_name)
           element.number = count
-          element.tooltip = item_utils.get_item_tooltip(item_name, count)
+          element.tooltip = item_utils.get_item_inventory_tooltip(item_name, count)
           something_changed = true
         end
       end
@@ -289,22 +305,8 @@ local function on_group_check_changed(event)
   end
 end
 
-EventDispatch.add({
-  {
-    name = UiConstants.NETITEM_ITEM,
-    event = "on_gui_click",
-    handler = on_click_net_inv_slot,
-  },
-  {
-    name = UiConstants.NETITEM_SLOT,
-    event = "on_gui_click",
-    handler = on_click_net_inv_slot,
-  },
-  {
-    name = UiConstants.NETITEM_GROUP,
-    event = "on_gui_checked_state_changed",
-    handler = on_group_check_changed,
-  },
-})
+Gui.on_click(UiConstants.NETITEM_ITEM, on_click_net_inv_slot)
+Gui.on_click(UiConstants.NETITEM_SLOT, on_click_net_inv_slot)
+Gui.on_checked_state_changed(UiConstants.NETITEM_GROUP, on_group_check_changed)
 
 return M

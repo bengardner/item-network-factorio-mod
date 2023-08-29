@@ -1,10 +1,17 @@
 --[[
   Creates a character invetory GuiElement tree under the specified parent GuiElement.
   There can be only one per character,
+
+  TODO: add a "set_peer" function that will set a peer class. That will provide an "insert" function.
+
+      other:insert(name, count)
+
+      That would allow "normal" interactions with the character inventory.
 ]]
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
-local EventDispatch  = require "src.EventDispatch"
+local Event = require('__stdlib__/stdlib/event/event')
+local Gui = require('__stdlib__/stdlib/event/gui')
 
 local M = {}
 local CharInv = {}
@@ -104,6 +111,7 @@ function CharInv.refresh(self)
     local stack = inv[idx]
     if idx == hand_slot then
       item_table.add({
+        name = string.format("%s:%s", UiConstants.CHARINV_HAND, idx),
         type = "sprite-button",
         sprite = "utility/hand",
         hovered_sprite = "utility/hand_black",
@@ -113,6 +121,7 @@ function CharInv.refresh(self)
       })
     elseif stack.valid_for_read then
       local inst = item_table.add({
+        name = string.format("%s:%s", UiConstants.CHARINV_ITEM, idx),
         type = "sprite-button",
         sprite = "item/" .. stack.name,
         style = "inventory_slot",
@@ -121,6 +130,7 @@ function CharInv.refresh(self)
       inst.number = stack.count
     else
       item_table.add({
+        name = string.format("%s:%s", UiConstants.CHARINV_SLOT, idx),
         type = "sprite-button",
         sprite = "utility/slot_icon_resource",
         style = "inventory_slot",
@@ -166,7 +176,7 @@ local function charinv_click_slot(self, event)
     end
 
     -- pick up the inventory in the slot
-    if element.tags.event == UiConstants.CHARINV_ITEM and stack.valid_for_read then
+    if event.match == UiConstants.CHARINV_ITEM and stack.valid_for_read then
       player.cursor_stack.transfer_stack(inv[slot])
       self.player.hand_location = { inventory = inv.index, slot = slot }
       play_sound = true
@@ -200,30 +210,16 @@ local function on_player_main_inventory_or_cursor_changed(event)
   end
 end
 
-EventDispatch.add({
+Event.on_event(
   {
-    event = defines.events.on_player_main_inventory_changed,
-    handler = on_player_main_inventory_or_cursor_changed,
+    defines.events.on_player_main_inventory_changed,
+    defines.events.on_player_cursor_stack_changed,
   },
-  {
-    event = defines.events.on_player_cursor_stack_changed,
-    handler = on_player_main_inventory_or_cursor_changed,
-  },
-  {
-    name = UiConstants.CHARINV_ITEM,
-    event = "on_gui_click",
-    handler = on_click_char_inv_slot,
-  },
-  {
-    name = UiConstants.CHARINV_HAND,
-    event = "on_gui_click",
-    handler = on_click_char_inv_slot,
-  },
-  {
-    name = UiConstants.CHARINV_SLOT,
-    event = "on_gui_click",
-    handler = on_click_char_inv_slot,
-  },
-})
+  on_player_main_inventory_or_cursor_changed
+)
+
+Gui.on_click(UiConstants.CHARINV_ITEM, on_click_char_inv_slot)
+Gui.on_click(UiConstants.CHARINV_HAND, on_click_char_inv_slot)
+Gui.on_click(UiConstants.CHARINV_SLOT, on_click_char_inv_slot)
 
 return M

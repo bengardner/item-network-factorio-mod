@@ -2,13 +2,14 @@ local constants = require "src.constants"
 local Paths = require "src.Paths"
 local Hotkeys = require "src.Hotkeys"
 
+require "src.prototypes.network-sensor"
+
 local M = {}
 
 function M.main()
   M.add_network_chest()
   M.add_loader()
   M.add_network_tank()
-  M.add_network_sensor()
 
   data:extend(Hotkeys.hotkeys)
 
@@ -55,30 +56,6 @@ function M.main()
       flags = { "gui-icon" },
     },
   })
-end
-
-function M.add_network_sensor()
-  local name = "network-sensor"
-  local override_item_name = "constant-combinator"
-  local override_prototype = "constant-combinator"
-
-  local entity = table.deepcopy(data.raw[override_prototype][override_item_name])
-  entity.name = name
-  entity.minable.result = name
-  -- Need enough to hold every item we might build
-  -- We could scan in data-final-fixes to get a more accurate count, but that is ~1700 items.
-  entity.item_slot_count = 1000
-
-  local item = table.deepcopy(data.raw["item"][override_item_name])
-  item.name = name
-  item.place_result = name
-  item.order = item.order .. "2"
-
-  local recipe = table.deepcopy(data.raw["recipe"][override_item_name])
-  recipe.name = name
-  recipe.result = name
-
-  data:extend({ entity, item, recipe })
 end
 
 function M.add_network_chest()

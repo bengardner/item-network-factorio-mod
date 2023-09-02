@@ -2,6 +2,7 @@ local Queue = require "src.Queue"
 local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
 local constants = require "src.constants"
+local clog = require("src.log_console").log
 
 local M = {}
 
@@ -391,6 +392,10 @@ function M.logistic_del(unit_number)
   global.mod.logistic[unit_number] = nil
 end
 
+function M.logistic_get_list()
+  return global.mod.logistic
+end
+
 function M.is_vehicle_entity(name)
   return name == "spidertron"
 end
@@ -552,6 +557,10 @@ function M.get_chest_info(unit_number)
   return global.mod.chests[unit_number]
 end
 
+function M.get_chests()
+  return global.mod.chests
+end
+
 function M.get_tank_info(unit_number)
   return global.mod.tanks[unit_number]
 end
@@ -625,6 +634,19 @@ end
 function M.increment_item_count(item_name, delta)
   local count = M.get_item_count(item_name)
   global.mod.items[item_name] = count + delta
+end
+
+function M.take_item_count(item_name, n_wanted, entity)
+  local n_avail = M.get_item_count(item_name)
+
+  local n_trans = math.max(0, math.min(n_avail, n_wanted))
+  if n_trans > 0 then
+    global.mod.items[item_name] = n_avail - n_trans
+  end
+  if entity ~= nil and n_trans < n_wanted then
+    M.missing_item_set(item_name, n_wanted - n_trans, entity.unit_number)
+  end
+  return n_trans
 end
 
 function M.get_player_info(player_index)

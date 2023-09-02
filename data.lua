@@ -3,6 +3,8 @@ local Paths = require "src.Paths"
 local Hotkeys = require "src.Hotkeys"
 
 require "src.prototypes.network-sensor"
+require "src.prototypes.network-chests"
+-- require "src.prototypes.golem-request-chest"
 
 local M = {}
 

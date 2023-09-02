@@ -4,6 +4,7 @@ local Event = require('__stdlib__/stdlib/event/event')
 local Gui = require('__stdlib__/stdlib/event/gui')
 local UiCharacterInventory = require "src.UiCharacterInventory"
 local UiNetworkItems = require "src.UiNetworkItems"
+local UiChestInventory = require "src.UiChestInventory"
 
 local M = {}
 
@@ -144,14 +145,12 @@ function M.create_gui(player_index)
   })
   --mid_pane.style.size = { 467, 828 }
 
---[[
+
   local right_pane = body_flow.add({
     type = "flow",
-    --type = "frame",
-    --style = "frame_without_left_side",
   })
-  right_pane.style.size = { 476, 828 }
-]]
+  --right_pane.style.size = { 476, 828 }
+
   local self = {
     elems = elems,
     pinned = false,
@@ -168,7 +167,14 @@ function M.create_gui(player_index)
   self.children.character_inventory.peer = self.children.network_items
   self.children.network_items.peer = self.children.character_inventory.peer
 
-  --M.add_net_inventory(self, right_pane)
+  -- test
+  for _, info in pairs(GlobalState.get_chests()) do
+    local entity = info.entity
+    if entity and entity.valid and entity.name == "network-chest-requester" then
+      self.children.chest_inv = UiChestInventory.create(right_pane, player, entity)
+      break
+    end
+  end
 end
 
 function M.add_chest_inventory(self, frame)

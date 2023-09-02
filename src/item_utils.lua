@@ -133,8 +133,16 @@ function M.get_item_plain_tooltip(item_name, item_count)
   return M.get_item_tooltip(item_name, item_count, "in_nv.item_plain_btn_tooltip")
 end
 
+function M.get_item_filter_tooltip(item_name, item_count)
+  return M.get_item_tooltip(item_name, 0, "in_nv.item_filter_btn_tooltip")
+end
+
 function M.get_item_inventory_tooltip(item_name, item_count)
   return M.get_item_tooltip(item_name, item_count, "in_nv.item_sprite_btn_tooltip")
+end
+
+function M.get_item_char_inventory_tooltip(item_name, item_count)
+  return M.get_item_tooltip(item_name, item_count, "in_nv.item_char_btn_tooltip")
 end
 
 function M.get_item_limit_tooltip(item_name, item_count)

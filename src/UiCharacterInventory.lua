@@ -37,6 +37,7 @@ local UiConstants = require "src.UiConstants"
 local Event = require('__stdlib__/stdlib/event/event')
 local Gui = require('__stdlib__/stdlib/event/gui')
 local clog = require("src.log_console").log
+local item_utils = require("src.item_utils")
 
 local M = {}
 local CharInv = {}
@@ -152,6 +153,7 @@ function CharInv.refresh(self)
         style = "inventory_slot",
         tags = { event = UiConstants.CHARINV_ITEM, slot = idx },
       })
+      inst.tooltip = item_utils.get_item_char_inventory_tooltip(stack.name, stack.count)
       inst.number = stack.count
     else
       item_table.add({

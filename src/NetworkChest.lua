@@ -5,6 +5,7 @@ local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
 local Event = require('__stdlib__/stdlib/event/event')
+local util = require("util") -- from core/lualib
 local clog = require("src.log_console").log
 local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
@@ -29,11 +30,15 @@ function M.on_create(event, entity)
 end
 
 local function generic_create_handler(event)
-  local entity = event.created_entity
+  local entity = event.created_entity or event.entity or event.destination
   if entity == nil then
-    entity = event.entity
+    return
   end
   if entity.name == "network-chest" then
+    M.on_create(event, entity)
+  elseif entity.name == "network-chest-provider" then
+    M.on_create(event, entity)
+  elseif entity.name == "network-chest-requester" then
     M.on_create(event, entity)
   elseif entity.name == "network-tank" then
     local config = nil
@@ -50,6 +55,8 @@ local function generic_create_handler(event)
     GlobalState.vehicle_add_entity(entity)
   elseif GlobalState.is_furnace_entity(entity.name) then
     GlobalState.furnace_add_entity(entity)
+  elseif util.string_starts_with(entity.name, "golem-chest-") then
+    entity.active = false
   end
 end
 
@@ -62,11 +69,13 @@ function M.script_raised_built(event)
 end
 
 function M.on_entity_cloned(event)
+  -- only handle same-type clones
   if event.source.name ~= event.destination.name then
     return
   end
   local name = event.source.name
-  if name == "network-chest" then
+
+  if util.string_starts_with(name, "network-chest") then
     GlobalState.register_chest_entity(event.destination)
     local source_info = GlobalState.get_chest_info(event.source.unit_number)
     local dest_info = GlobalState.get_chest_info(event.destination.unit_number)
@@ -104,7 +113,7 @@ function M.generic_destroy_handler(event, opts)
   if entity.unit_number == nil then
     return
   end
-  if entity.name == "network-chest" then
+  if util.string_starts_with(entity.name, "network-chest") then
     GlobalState.put_chest_contents_in_network(entity)
     if not opts.do_not_delete_entity then
       GlobalState.delete_chest_entity(entity.unit_number)
@@ -786,6 +795,7 @@ local function update_network_chest_configured_locked(info, inv, contents)
   return GlobalState.UPDATE_STATUS.UPDATED
 end
 
+-- this is the handler for the "old" network-chest
 local function update_network_chest(info)
   local inv = info.entity.get_output_inventory()
   local contents = inv.get_contents()
@@ -809,6 +819,76 @@ local function update_network_chest(info)
       return update_network_chest_configured_unlocked(info, inv, contents)
     end
   end
+end
+
+--[[
+This is the handler for the "new" provider-only chest.
+Sends everything to the network. No bars, filter, etc.
+]]
+local function update_network_chest_provider(info)
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+
+  local inv = info.entity.get_output_inventory()
+  local contents = inv.get_contents()
+
+  -- move everything we can to the network
+  for item, count in pairs(contents) do
+    if count > 0 then
+      local n_free = GlobalState.get_insert_count(item)
+      local n_transfer = math.min(count, n_free)
+      if n_transfer > 0 then
+        local n_added = inv.remove({ name=item, count=n_transfer })
+        if n_added > 0 then
+          GlobalState.increment_item_count(item, n_added)
+          status = GlobalState.UPDATE_STATUS.UPDATED
+        end
+      end
+    end
+  end
+
+  return status
+end
+
+--[[
+This is the handler for the "new" provider-only chest.
+Sends everything to the network. No bars, filter, etc.
+]]
+local function update_network_chest_requester(info)
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+  local inv = info.entity.get_output_inventory()
+  local contents = inv.get_contents()
+
+  -- satisfy requests (pull into contents)
+  for _, req in pairs(info.requests) do
+    if req.type == "take" then
+      local n_have = contents[req.item] or 0
+      local n_innet = GlobalState.get_item_count(req.item)
+      local n_avail = math.max(0, n_innet - (req.limit or 0))
+      local n_want = req.buffer
+      if n_want > n_have then
+        local n_transfer = math.min(n_want - n_have, n_avail)
+        if n_transfer > 0 then
+          -- it may not fit in the chest due to other reasons
+          n_transfer = inv.insert({name=req.item, count=n_transfer})
+          if n_transfer > 0 then
+            status = GlobalState.UPDATE_STATUS.UPDATED
+            GlobalState.set_item_count(req.item, n_innet - n_transfer)
+
+            --[[ If we filled the entire buffer AND there is enough in the net for another buffer, then
+            we are probably not requesting enough. Up the buffer size by 2.
+            ]]
+            if n_transfer == req.buffer and n_innet > n_transfer * 4 then
+              req.buffer = req.buffer + 2
+            end
+          end
+        else
+          GlobalState.missing_item_set(req.item, info.entity.unit_number, n_want - n_have)
+        end
+      end
+    end
+  end
+
+  return status
 end
 
 local function update_tank(info)
@@ -901,7 +981,13 @@ local function update_chest_entity(unit_number, info)
     return GlobalState.UPDATE_STATUS.NOT_UPDATED
   end
 
-  return update_network_chest(info)
+  if entity.name == "network-chest" then
+    return update_network_chest(info)
+  elseif entity.name == "network-chest-provider" then
+    return update_network_chest_provider(info)
+  elseif entity.name == "network-chest-requester" then
+    return update_network_chest_requester(info)
+  end
 end
 
 local function update_tank_entity(unit_number, info)

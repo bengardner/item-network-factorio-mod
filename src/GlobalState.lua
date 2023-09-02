@@ -420,13 +420,21 @@ function M.vehicle_del(unit_number)
   global.mod.vehicles[unit_number] = nil
 end
 
+-- min_fuel sets the minimum fuel items (add if not enough) (required)
+-- max_fuel sets the maximum fuel items (remove if too many) (default nil=don't remove)
+-- max_out sets the maximum count in the output inventory, triggering a remove (default nil=don't remove)
+-- min_out sets the minimum, to leave some in the furnace (default 0)
 local furnace_names = {
-  ["stone-furnace"] = 5,
-  ["steel-furnace"] = 5,
-  ["boiler"] = 20,
-  ["burner-mining-drill"] = 5,
-  ["burner-inserter"] = 5,
+  ["stone-furnace"]       = { min_fuel = 5, min_out = 1, max_out = 10 },
+  ["steel-furnace"]       = { min_fuel = 5, min_out = 1, max_out = 10 },
+  ["boiler"]              = { min_fuel = 20 },
+  ["burner-mining-drill"] = { min_fuel = 5, max_fuel = 20 },
+  ["burner-inserter"]     = { min_fuel = 5 },
 }
+
+function M.get_furnace_config(name)
+  return furnace_names[name]
+end
 
 function M.is_furnace_entity(name)
   return furnace_names[name] ~= nil

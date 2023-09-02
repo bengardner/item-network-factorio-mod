@@ -398,36 +398,49 @@ function M.furnace_update_entity(entity)
     return GlobalState.UPDATE_STATUS.INVALID
   end
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+  local cfg = GlobalState.get_furnace_config(entity.name)
 
   -- try to top off the fuel
   local fuel_name = "coal"
   local n_avail = GlobalState.get_item_count(fuel_name)
-  local inv = entity.get_fuel_inventory()
-  if inv ~= nil then
-    local fuel_count = inv.get_item_count(fuel_name)
-    local n_wanted = 5
-    if fuel_count < n_wanted then
-      local n_trans = math.max(0, math.min(n_avail, n_wanted - fuel_count))
+  local finv = entity.get_fuel_inventory()
+  if finv ~= nil then
+    local fuel_count = finv.get_item_count(fuel_name)
+    -- do we need to add fuel?
+    if cfg.min_fuel ~= nil and fuel_count < cfg.min_fuel then
+      local n_trans = math.max(0, math.min(n_avail, cfg.min_fuel - fuel_count))
       if n_trans > 0 then
-        local n_added = inv.insert({name = fuel_name, count = n_trans })
+        local n_added = finv.insert({name = fuel_name, count = n_trans })
         if n_added > 0 then
           --clog("loaded %s (%s) info %s", fuel_count, n_added, entity.name)
           GlobalState.increment_item_count(fuel_name, -n_added)
           status = GlobalState.UPDATE_STATUS.UPDATED
         end
       end
+    elseif cfg.max_fuel ~= nil and fuel_count > cfg.max_fuel then
+      local n_taken = finv.remove({ name=fuel_name, count=(fuel_count - cfg.min_fuel) })
+      if n_taken > 0 then
+        GlobalState.increment_item_count(fuel_name, n_taken)
+        status = GlobalState.UPDATE_STATUS.UPDATED
+      end
     end
   end
 
   -- take any full stacks
-  inv = entity.get_output_inventory()
-  if inv ~= nil then
-    for idx = 1, #inv do
-      local stack = inv[idx]
-      if stack.valid_for_read and stack.count > 5 then
-        GlobalState.increment_item_count(stack.name, stack.count)
-        stack.clear()
-        status = GlobalState.UPDATE_STATUS.UPDATED
+  if cfg.max_out ~= nil then
+    -- don't do anything if the fuel inv is the output inv
+    local oinv = entity.get_output_inventory()
+    if oinv ~= nil and oinv ~= finv then
+      for idx = 1, #oinv do
+        local stack = oinv[idx]
+        if stack.valid_for_read and stack.count > cfg.max_out then
+          local n_take = stack.count - (cfg.min_out or 0)
+          if n_take > 0 then
+            GlobalState.increment_item_count(stack.name, stack.count)
+            stack.count = stack.count - n_take
+            status = GlobalState.UPDATE_STATUS.UPDATED
+          end
+        end
       end
     end
   end

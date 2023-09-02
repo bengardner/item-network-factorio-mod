@@ -18,5 +18,6 @@ item.order = item.order .. "2"
 local recipe = table.deepcopy(data.raw["recipe"][override_item_name])
 recipe.name = name
 recipe.result = name
+recipe.enabled = true
 
 data:extend({ entity, item, recipe })

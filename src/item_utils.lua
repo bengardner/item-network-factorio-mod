@@ -1,7 +1,7 @@
 --[[
 Some common utilites for manipulating item list or the UI.
 ]]
-local log = require("src.log_console").log
+local clog = require("src.log_console").log
 
 local M = {}
 
@@ -129,6 +129,10 @@ function M.get_item_tooltip(name, count, template)
   end
 end
 
+function M.get_item_plain_tooltip(item_name, item_count)
+  return M.get_item_tooltip(item_name, item_count, "in_nv.item_plain_btn_tooltip")
+end
+
 function M.get_item_inventory_tooltip(item_name, item_count)
   return M.get_item_tooltip(item_name, item_count, "in_nv.item_sprite_btn_tooltip")
 end
@@ -176,6 +180,65 @@ function M.filter_name_or_tag(event, pattern)
       return true
     end
   end
+end
+
+--[[
+  Checks to see if an item stack can be stored in the item network.
+  @stack should be a LuaItemStack.
+
+  If the item cannot be stored, then this returns nil.
+  If it can be stored, then it breaks the stack down into a list of simple stacks.
+
+  If item_number is not nil, then the game tracks the item instance and it might not
+  be storeable in the item network.
+
+  NOTE: the game strips out inventory when converting an entity to an item.
+  The "item-with-inventory" appears to be just the blueprint-book.
+
+  According to the docs, item_number ~= nil for the following types:
+    - "armor"                 -- can store after emptying the grid (loses label, colors, etc)
+    - "spidertron-remote"     -- can store (loses connected_entity)
+    - "selection-tool"        -- never store
+    - "copy-paste-tool"       -- never store
+    - "upgrade-item"          -- never store
+    - "deconstruction-item"   -- never store
+    - "blueprint"             -- never store
+    - "blueprint-book"        -- never store
+    - "item-with-entity-data" -- is_item_with_entity_data = can store after emptying the grid (loses label, colors)
+    - "item-with-inventory"   -- never store (blueprint-book?)
+    - "item-with-tags"        -- never store (never seen this)
+]]
+function M.breakdown_stack(stack)
+  if not stack.valid_for_read then
+    -- can't read it, so can't store it.
+    return nil
+  end
+  local item_name = stack.name
+  local prot = game.item_prototypes[item_name]
+  if prot == nil then
+    -- can only store defined items
+    return nil
+  end
+
+  -- start with the stack item
+  local stacks = { { name = item_name, count = stack.count} }
+
+  -- only need to handle if tracked individually
+  if stack.item_number ~= nil then
+    -- We can break down armor, vehicles (item-with-entity-data), and remotes
+    if not (stack.is_armor or stack.is_item_with_entity_data or stack.type == "spidertron-remote") then
+      return nil
+    end
+
+    -- extract the grid contents
+    if stack.grid then
+      for name, count in pairs(stack.grid.get_contents()) do
+        table.insert(stacks, { name=name, count=count })
+      end
+    end
+  end
+
+  return stacks
 end
 
 return M

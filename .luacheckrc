@@ -1,10 +1,13 @@
 
 globals = {
+  "serpent"
 }
 
 read_globals = {
   "data",
-  "defines",
+  defines = {
+    other_fields = true,
+  },
   "game",
   global = {
     fields = {

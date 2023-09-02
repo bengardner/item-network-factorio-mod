@@ -1,49 +1,15 @@
+--[[
+  Implenets a Constant Combinator that exposes the Item Network content.
+
+  TODO: add a variant that exposes the Limits instead of the content.
+]]
 local GlobalState = require "src.GlobalState"
 local Event = require('__stdlib__/stdlib/event/event')
-local Gui = require('__stdlib__/stdlib/event/gui')
 
 local M = {}
 
---[[
-Relevant fields:
-
-entity.get_control_behavior()
-
-LuaConstantCombinatorControlBehavior
-  set_signal(index, signal?)
-    Sets the signal at the given index.
-  get_signal(index) 	 → Signal
-    Gets the signal at the given index.
-  help() 	 → string
-    All methods and properties that this object supports.
-  parameters [RW] 	:: array[ConstantCombinatorParameters]?
-      This constant combinator's parameters.
-  enabled [RW] 	:: boolean
-      Turns this constant combinator on and off.
-  signals_count [R] 	:: uint
-    The number of signals this constant combinator supports.
-  valid [R] 	:: boolean
-    Is this object valid?
-  object_name [R] 	:: string
-    The class name of this object.
-
-ConstantCombinatorParameters :: table
-  signal 	:: SignalID     Signal to emit.
-  count 	:: int          Value of the signal to emit.
-  index 	:: uint         Index of the constant combinator's slot to set this signal to.
-
-SignalID :: table
-  type 	:: string
-    "item", "fluid", or "virtual".
-  name 	:: string?
-    Name of the item, fluid or virtual signal.
-
-Game plan:
-  - build up a set of signals, set parameters
-]]
-
 -- want a consistent sort order (sort by signal.type and then signal.name)
-local function compare_params(left, right)
+local function compare_control_params(left, right)
   if left.signal.type ~= right.signal.type then
     return left.signal.type < right.signal.type
   end
@@ -59,7 +25,7 @@ function M.get_parameters()
     })
   end
   -- have to set the index after sorting
-  table.sort(params, compare_params)
+  table.sort(params, compare_control_params)
   for index, param in ipairs(params) do
     param.index = index
   end
@@ -68,8 +34,9 @@ end
 
 function M.service_sensors()
   local params
-  -- all sensors get the same parameters
-  for _, entity in pairs(GlobalState.sensor_get_list()) do
+  local to_del = {}
+  -- all sensors get the same parameters, so handle them all in one tick
+  for unit_number, entity in pairs(GlobalState.sensor_get_list()) do
     if entity.valid then
       local cb = entity.get_control_behavior()
       if cb ~= nil then
@@ -78,50 +45,38 @@ function M.service_sensors()
         end
         cb.parameters = params
       end
+    else
+      table.insert(to_del, unit_number)
     end
+  end
+  for _, un in ipairs(to_del) do
+    GlobalState.sensor_del(un)
   end
 end
 
 function M.register_entity(event)
-  local entity = event.created_entity
-  if entity == nil then
-    entity = event.entity
-  end
+  local entity = event.created_entity or event.entity or event.destination
   if entity ~= nil and entity.name == "network-sensor" then
     GlobalState.sensor_add(entity)
-  end
-end
-
-function M.deregister_entity(event)
-  local entity = event.entity
-  if entity ~= nil and entity.name == "network-sensor" then
-    GlobalState.sensor_del(entity)
   end
 end
 
 Event.on_event(
   {
     defines.events.on_built_entity,
-    defines.events.script_raised_built,
     defines.events.on_entity_cloned,
     defines.events.on_robot_built_entity,
+    defines.events.script_raised_built,
     defines.events.script_raised_revive,
   },
   M.register_entity
 )
 
--- delete
-Event.on_event(
-  {
-    defines.events.on_pre_player_mined_item,
-    defines.events.on_robot_mined_entity,
-    defines.events.script_raised_destroy,
-    defines.events.on_entity_died,
-    defines.events.on_marked_for_deconstruction,
-  },
-  M.deregister_entity
-)
+--[[
+NOTE: We skip the destroy events because we can discard any invalid entities on update.
+]]
 
-Event.on_nth_tick(120, M.service_sensors)
+-- update every 3 seconds
+Event.on_nth_tick(3 * 60, M.service_sensors)
 
 return M

@@ -2,16 +2,41 @@
   Creates a character invetory GuiElement tree under the specified parent GuiElement.
   There can be only one per character,
 
-  TODO: add a "set_peer" function that will set a peer class. That will provide an "insert" function.
+  Inteface for the module:
+  - M.create(parent, player)
+    Create the GUI element tree as a child of @parent for @player
 
-      other:insert(name, count)
+  Exposed interface for the "instance"
+  - inst.frame (R)
+    This is the top-most GUI element. Useful to assign to a tabbed pane.
 
-      That would allow "normal" interactions with the character inventory.
+  - inst.peer (R/W)
+    This is the target for inventory operations.
+    The peer must provide one function:
+      peer:insert(ItemStackIdentification) => n_inserted
+        - SHIFT + left => transfer one item stack to peer
+        - SHIFT + right => transfers min(ceil(net_count/2), ceil(stack_size/2)) to peer
+        - CTRL + left => transfer all item to peer
+        - CTRL + right => transfer half of items (ceil(net_count/2)) to peer
+    This field is only checked when trying to move inventory to the peer.
+
+  - inst:insert(ItemStackIdentification) => n_inserted
+    Called to insert items into this control.
+    Maps directly to a call to player.insert(...).
+    IE, ammo might go to the ammo inventory, other to the main inv.
+
+  - inst:destroy()
+    This destroys any data associated with the instance and the GUI.
+
+  - inst:refresh()
+    This refreshes the data in the display.
+
 ]]
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local Event = require('__stdlib__/stdlib/event/event')
 local Gui = require('__stdlib__/stdlib/event/gui')
+local clog = require("src.log_console").log
 
 local M = {}
 local CharInv = {}
@@ -140,6 +165,10 @@ function CharInv.refresh(self)
   end
 end
 
+function CharInv:insert(items)
+  return self.player.insert(items)
+end
+
 --[[
   Handles the on_gui_click event for all main character inventory slots.
   The element has tags.slot set to the slot index that was clicked.
@@ -163,31 +192,87 @@ local function charinv_click_slot(self, event)
   -- shift + right => transfer half stack
   -- control + right => hald transfer
   -- middle mouse => create filter on slot
-  --
+  local mods = 0
+  if event.alt then
+    mods = mods + 1
+  end
+  if event.control then
+    mods = mods + 2
+  end
+  if event.shift then
+    mods = mods + 4
+  end
   local play_sound = false
 
-  if event.button == defines.mouse_button_type.left then
-    -- drop the cursor content into the player inventory
-    if not player.is_cursor_empty() then
-      -- drop cursor contents into the inventory
-      inv.insert({name = player.cursor_stack.name, count = player.cursor_stack.count})
-      player.cursor_stack.clear()
-      play_sound = true
-    end
+  --[[
+  peer:insert({name=name, count=count}) => n_inserted
+  - SHIFT + left => transfer one item stack to peer
+  - SHIFT + right => transfers min(ceil(net_count/2), ceil(stack_size/2)) to peer
+  - CTRL + left => transfer all item to peer
+  - CTRL + right => transfer half of items (ceil(net_count/2)) to peer
+  ]]
 
-    -- pick up the inventory in the slot
-    if event.match == UiConstants.CHARINV_ITEM and stack.valid_for_read then
-      player.cursor_stack.transfer_stack(inv[slot])
-      self.player.hand_location = { inventory = inv.index, slot = slot }
-      play_sound = true
+  if event.button == defines.mouse_button_type.left then
+    if mods == 4 then
+      if stack.valid_for_read and self.peer and self.peer.insert then
+        -- SHIFT + Left click : transfer stack to peer
+        local n_added = self.peer:insert(stack)
+        if n_added > 0 and stack.valid_for_read then
+          stack.count = stack.count - n_added
+        end
+        play_sound = true
+      end
+
+    elseif mods == 2 then
+      -- CTRL + Left click => transfer all item to peer
+      if stack.valid_for_read and self.peer and self.peer.insert then
+        local item_name = stack.name
+        for idx = 1, #inv do
+          local st = inv[idx]
+          if st.valid_for_read and st.name == item_name then
+            local n_added = self.peer:insert(st)
+            if n_added > 0 and st.valid_for_read then
+              st.count = st.count - n_added
+            end
+            play_sound = true
+          end
+        end
+      end
+
+    elseif mods == 0 then
+      -- no shift: drop and then pick up the stack
+
+      -- drop the cursor content into the player inventory
+      if not player.is_cursor_empty() then
+        -- drop cursor contents into the inventory
+        local n_added = inv.insert(player.cursor_stack)
+        if n_added > 0 then
+          play_sound = true
+          if player.cursor_stack.valid_for_read then
+            player.cursor_stack.count = player.cursor_stack.count - n_added
+          end
+        end
+      end
+
+      -- pick up the inventory in the slot
+      if player.is_cursor_empty() and event.match == UiConstants.CHARINV_ITEM and stack.valid_for_read then
+        player.cursor_stack.transfer_stack(stack)
+        self.player.hand_location = { inventory = inv.index, slot = slot }
+        play_sound = true
+      end
     end
 
   elseif event.button == defines.mouse_button_type.right then
     -- right click with an empty stack grabs half the stack
     if player.is_cursor_empty() and stack.valid_for_read then
-      local half_count = math.ceil(stack.count / 2)
-      player.cursor_stack.set_stack({ name=stack.name, count=half_count })
-      stack.count = stack.count - half_count -- might set to 0, invalidating the stack
+      -- special case to preserve any custom item data (grid)
+      if stack.count == 1 then
+        player.cursor_stack.transfer_stack(stack)
+      else
+        local half_count = math.ceil(stack.count / 2)
+        player.cursor_stack.set_stack({ name=stack.name, count=half_count })
+        stack.count = stack.count - half_count -- might set to 0, invalidating the stack
+      end
       play_sound = true
     end
   end
@@ -205,7 +290,7 @@ end
 
 local function on_player_main_inventory_or_cursor_changed(event)
   local self = gui_get(event.player_index)
-  if self ~= nil then
+  if self ~= nil and self.refresh ~= nil then
     self:refresh()
   end
 end

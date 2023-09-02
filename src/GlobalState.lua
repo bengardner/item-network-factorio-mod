@@ -59,6 +59,11 @@ function M.inner_setup()
     M.vehicle_scan_surfaces()
   end
 
+  if global.mod.furnaces == nil then
+    global.mod.furnaces = {} -- furnaces[unit_number] = entity
+    M.furnace_scan_surfaces()
+  end
+
   if global.mod.logistic == nil then
     global.mod.logistic = {} -- key=unit_number, val=entity
   end
@@ -118,26 +123,24 @@ function M.reset_queues()
   global.mod.scan_queue = Queue.new()
   global.mod.scan_queue_inactive = Queue.new()
   for unum, _ in pairs(global.mod.chests) do
-   -- game.print(string.format("chest add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
   for unum, _ in pairs(global.mod.tanks) do
-    --game.print(string.format("tank add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
   for unum, _ in pairs(global.mod.vehicles) do
-    --game.print(string.format("vechicle add %s", unum))
     Queue.push(global.mod.scan_queue, unum)
   end
   for unum, _ in pairs(global.mod.logistic) do
-    --game.print(string.format("logistic add %s", unum))
+    Queue.push(global.mod.scan_queue, unum)
+  end
+  for unum, _ in pairs(global.mod.furnaces) do
     Queue.push(global.mod.scan_queue, unum)
   end
 end
 
 -- scan existing tanks and chests and use the max "give" limit as the item limit
 function M.limit_scan(item)
-  game.print("limit scan")
   local limits = global.mod.item_limits
 
   for _, info in pairs(global.mod.chests) do
@@ -162,7 +165,7 @@ function M.limit_scan(item)
           local old_limit = limits[key]
           if old_limit == nil or old_limit < config.limit then
             limits[config.fluid] = config.limit
-            game.print(string.format("updated limit %s %s", key, config.limit))
+            --game.print(string.format("updated limit %s %s", key, config.limit))
           end
         end
       end
@@ -417,14 +420,54 @@ function M.vehicle_del(unit_number)
   global.mod.vehicles[unit_number] = nil
 end
 
-function M.sensor_add(entity)
-  if global.mod.sensors[entity.unit_number] == nil then
-    global.mod.sensors[entity.unit_number] = entity
+local furnace_names = {
+  ["stone-furnace"] = 5,
+  ["steel-furnace"] = 5,
+  ["boiler"] = 20,
+  ["burner-mining-drill"] = 5,
+  ["burner-inserter"] = 5,
+}
+
+function M.is_furnace_entity(name)
+  return furnace_names[name] ~= nil
+end
+
+function M.furnace_scan_surfaces()
+  local names = {}
+  for k, _ in pairs(furnace_names) do
+    table.insert(names, k)
+  end
+  for _, surface in pairs(game.surfaces) do
+    local entities = surface.find_entities_filtered { name = names }
+    for _, entity in ipairs(entities) do
+      M.furnace_add_entity(entity)
+    end
   end
 end
 
-function M.sensor_del(entity)
+function M.get_furnace_entity(unit_number)
+  return global.mod.furnaces[unit_number]
+end
+
+-- add a vehicle, assume the caller knows what he is doing
+function M.furnace_add_entity(entity)
+  if global.mod.furnaces[entity.unit_number] == nil then
+    global.mod.furnaces[entity.unit_number] = entity
+    Queue.push(global.mod.scan_queue, entity.unit_number)
+  end
+end
+
+function M.furnace_del(unit_number)
+  global.mod.furnaces[unit_number] = nil
+end
+
+
+function M.sensor_add(entity)
   global.mod.sensors[entity.unit_number] = entity
+end
+
+function M.sensor_del(unit_number)
+  global.mod.sensors[unit_number] = nil
 end
 
 function M.sensor_get_list()

@@ -3,12 +3,25 @@
   There can be only one per character,
 
   Inteface for the module:
-  - M.create(parent, player)
+  - M.create(parent, player, args)
     Create the GUI element tree as a child of @parent for @player
+    Supported args:
+      read_only = boolean
+        Disables all the click events on the items
 
   Exposed interface for the "instance"
   - inst.frame
     This is the top-most GUI element. Useful to assign to a tabbed pane.
+  - inst.peer
+    This is the target for inventory operations.
+    The peer must provide one function:
+      peer:insert({name=name, count=count}) => n_inserted
+        - SHIFT + left => transfer one item stack to peer
+        - SHIFT + right => transfers min(ceil(net_count/2), ceil(stack_size/2)) to peer
+        - CTRL + left => transfer all item to peer
+        - CTRL + right => transfer half of items (ceil(net_count/2)) to peer
+
+  - inst:insert({name=name, count=count}) => n_inserted
   - inst:destroy()
     This destroys any data associated with the instance and the GUI.
   - inst:refresh()
@@ -18,6 +31,7 @@ local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
 local Gui = require('__stdlib__/stdlib/event/gui')
 local item_utils = require "src.item_utils"
+local clog = require("src.log_console").log
 
 -- M is the module that supplies 'create()'
 local M = {}
@@ -32,12 +46,24 @@ local function gui_set(player_index, value)
   GlobalState.get_ui_state(player_index).UiNetworkItems = value
 end
 
-function M.create(parent, player, show_title)
+function M.create(parent, player, args)
+  args = args or {}
   local self = {
     player = player,
     elems = {},
     use_group = false,
+    read_only = args.read_only,
   }
+
+  if args.read_only == true then
+    self.id_item = UiConstants.NETITEM_ITEM_RO
+    self.id_slot = UiConstants.NETITEM_SLOT_RO
+    self.get_item_tooltip = item_utils.get_item_plain_tooltip
+  else
+    self.id_item = UiConstants.NETITEM_ITEM
+    self.id_slot = UiConstants.NETITEM_SLOT
+    self.get_item_tooltip = item_utils.get_item_inventory_tooltip
+  end
 
   -- set index so we can call self:refresh() or M.refresh(self)
   setmetatable(self, { __index = NetInv })
@@ -121,18 +147,18 @@ local function get_list_of_items()
 end
 
 -- REVISIT: this should be in the utils file
-local function get_sprite_button_def(item)
+local function get_sprite_button_def(self, item, event_name)
   local tooltip
   local sprite_path
   local tags
   local name
   if item.temp == nil then
-    name = string.format("%s:%s", UiConstants.NETITEM_ITEM, item.item)
-    tooltip = item_utils.get_item_inventory_tooltip(item.item, item.count)
+    name = string.format("%s:%s", self.id_item, item.item)
+    tooltip = self.get_item_tooltip(item.item, item.count)
     tags = { item = item.item }
     sprite_path = "item/" .. item.item
   else
-    name = string.format("%s:%s@%s", UiConstants.NETITEM_ITEM, item.item, item.temp)
+    name = string.format("%s:%s@%s", self.id_item, item.item, item.temp)
     tooltip = item_utils.get_fluid_inventory_tooltip(item.item, item.temp, item.count)
     sprite_path = "fluid/" .. item.item
   end
@@ -153,17 +179,18 @@ function NetInv:refresh()
   local total_count = 0
   local use_group = self.use_group
 
-  -- add a dummy slot for dropping stuff
-  item_table.add({
-    name = UiConstants.NETITEM_SLOT,
-    type = "sprite-button",
-    sprite = "utility/slot_icon_resource_black",
-    style = "inventory_slot",
-    tooltip = { "in_nv.deposit_item_sprite_btn_tooltip" },
-  })
-
-  if use_group then
-    item_utils.pad_item_table_row(item_table)
+  if self.read_only ~= true then
+    -- add a dummy slot for dropping stuff
+    item_table.add({
+      name = self.id_slot,
+      type = "sprite-button",
+      sprite = "utility/slot_icon_resource_black",
+      style = "inventory_slot",
+      tooltip = { "in_nv.deposit_item_sprite_btn_tooltip" },
+    })
+    if use_group then
+      item_utils.pad_item_table_row(item_table)
+    end
   end
 
   -- add the items
@@ -174,7 +201,7 @@ function NetInv:refresh()
         item_utils.pad_item_table_row(item_table)
       end
     else
-      local sprite_button = get_sprite_button_def(item)
+      local sprite_button = get_sprite_button_def(self, item)
       local sprite_button_inst = item_table.add(sprite_button)
       sprite_button_inst.number = item.count
       total_items = total_items + 1
@@ -183,6 +210,65 @@ function NetInv:refresh()
   end
 
   self.elems.title.caption = string.format("Network Items - %s items, %s total", total_items, total_count)
+end
+
+--[[
+@stack is a SimpleItemStack or LuaItemStack
+
+string:
+  Means a full stack of items named @stack
+
+table: (ItemStackDefinition)
+  "name" and "count" are used. Everything else is ignored.
+
+Anything else (LuaItemStack)
+]]
+function NetInv:insert(stack)
+  -- handle a string (full stack of item)
+  if type(stack) == "string" then
+    local prot = game.item_prototypes[stack]
+    if prot == nil then
+      return 0
+    end
+    stack = { name = stack, count = prot.stack_size }
+    -- handled in the next block
+  end
+
+  -- handle a "ItemStackDefinition" table
+  if type(stack) == "table" and stack.name then
+    local prot = game.item_prototypes[stack.name]
+    if prot == nil then
+      return 0
+    end
+    local count = math.max(0, stack.count or 1)
+    if count > 0 then
+      GlobalState.increment_item_count(stack.name, count)
+      self:refresh()
+    end
+    return count
+  end
+
+  -- Probably a LuaItemStack
+  -- break it down into stuff we can insert
+  local simple_stacks = item_utils.breakdown_stack(stack)
+  if simple_stacks == nil then
+    clog(
+      "Unable to deposit %s because it might have custom data that will be lost.",
+      stack.name)
+    return 0
+  end
+
+  -- return the count from the first stack (subsequent are grid items and are always accepted)
+  -- move the stack to the item network
+  for _, st in ipairs(simple_stacks) do
+    if st.name ~= nil and st.count > 0 then
+      GlobalState.increment_item_count(st.name, st.count)
+    end
+  end
+  self:refresh()
+
+  -- return that we ate it all
+  return stack.count
 end
 
 --[[
@@ -243,7 +329,7 @@ local function NetInv_click_slot(self, event)
           GlobalState.set_item_count(item_name, network_count - n_moved)
           local count = GlobalState.get_item_count(item_name)
           element.number = count
-          element.tooltip = item_utils.get_item_inventory_tooltip(item_name, count)
+          element.tooltip = self.get_item_tooltip(item_name, count)
           something_changed = true
         end
       end
@@ -255,26 +341,32 @@ local function NetInv_click_slot(self, event)
       return
     end
 
-    -- don't deposit tracked entities (can be unique)
-    if cursor_stack.item_number ~= nil then
-      game.print(string.format(
-        "Unable to deposit %s because it might be a vehicle with items that will be lost.",
-        cursor_stack.name))
-      return
-    end
-
     if event.button == defines.mouse_button_type.left then
+      local is_simple = (cursor_stack.item_number == nil)
       local item_name = cursor_stack.name
 
+      local simple_stacks = item_utils.breakdown_stack(cursor_stack)
+      if simple_stacks == nil then
+        clog(
+          "Unable to deposit %s because it might have custom data that will be lost.",
+          item_name)
+        return
+      end
+
       -- move the stack to the item network
-      GlobalState.increment_item_count(item_name, cursor_stack.count)
+      for _, st in ipairs(simple_stacks) do
+        if st.name ~= nil and st.count > 0 then
+          GlobalState.increment_item_count(st.name, st.count)
+        end
+      end
+
       cursor_stack.count = 0
       cursor_stack.clear()
       player.clear_cursor()
       something_changed = true
 
       -- if control is pressed, move all of that item to the network
-      if event.control then
+      if event.control and is_simple then
         local my_count = inv.get_item_count(item_name)
         if my_count > 0 then
           GlobalState.increment_item_count(item_name, my_count)

@@ -5,6 +5,7 @@ local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local NetworkTankGui = require "src.NetworkTankGui"
 local Event = require('__stdlib__/stdlib/event/event')
+local clog = require("src.log_console").log
 local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
 
@@ -47,6 +48,8 @@ local function generic_create_handler(event)
     GlobalState.logistic_add_entity(entity)
   elseif GlobalState.is_vehicle_entity(entity.name) then
     GlobalState.vehicle_add_entity(entity)
+  elseif GlobalState.is_furnace_entity(entity.name) then
+    GlobalState.furnace_add_entity(entity)
   end
 end
 
@@ -386,6 +389,47 @@ function M.vehicle_update_entity(entity)
     status = M.update_vehicle(entity,
       entity.get_inventory(defines.inventory.spider_trash),
       entity.get_inventory(defines.inventory.spider_trunk))
+  end
+  return status
+end
+
+function M.furnace_update_entity(entity)
+  if not entity.valid then
+    return GlobalState.UPDATE_STATUS.INVALID
+  end
+  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+
+  -- try to top off the fuel
+  local fuel_name = "coal"
+  local n_avail = GlobalState.get_item_count(fuel_name)
+  local inv = entity.get_fuel_inventory()
+  if inv ~= nil then
+    local fuel_count = inv.get_item_count(fuel_name)
+    local n_wanted = 5
+    if fuel_count < n_wanted then
+      local n_trans = math.max(0, math.min(n_avail, n_wanted - fuel_count))
+      if n_trans > 0 then
+        local n_added = inv.insert({name = fuel_name, count = n_trans })
+        if n_added > 0 then
+          --clog("loaded %s (%s) info %s", fuel_count, n_added, entity.name)
+          GlobalState.increment_item_count(fuel_name, -n_added)
+          status = GlobalState.UPDATE_STATUS.UPDATED
+        end
+      end
+    end
+  end
+
+  -- take any full stacks
+  inv = entity.get_output_inventory()
+  if inv ~= nil then
+    for idx = 1, #inv do
+      local stack = inv[idx]
+      if stack.valid_for_read and stack.count > 5 then
+        GlobalState.increment_item_count(stack.name, stack.count)
+        stack.clear()
+        status = GlobalState.UPDATE_STATUS.UPDATED
+      end
+    end
   end
   return status
 end
@@ -815,13 +859,14 @@ local function update_tank(info)
       local n_transfer = math.floor(math.min(n_give, n_take))
       if n_transfer > 0 then
         status = GlobalState.UPDATE_STATUS.UPDATED
-        GlobalState.increment_fluid_count(fluid, temp, -n_transfer)
         local added = info.entity.insert_fluid({
           name = fluid,
           amount = n_transfer,
           temperature = temp,
         })
-        assert(added == n_transfer)
+        if added > 0 then
+          GlobalState.increment_fluid_count(fluid, temp, -added)
+        end
       end
       if n_take > n_give then
         GlobalState.missing_fluid_set(fluid, temp, info.entity.unit_number,
@@ -879,6 +924,11 @@ local function update_entity(unit_number)
   entity = GlobalState.get_vehicle_entity(unit_number)
   if entity ~= nil then
     return M.vehicle_update_entity(entity)
+  end
+
+  entity = GlobalState.get_furnace_entity(unit_number)
+  if entity ~= nil then
+    return M.furnace_update_entity(entity)
   end
 
   return GlobalState.UPDATE_STATUS.INVALID

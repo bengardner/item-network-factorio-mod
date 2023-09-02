@@ -4,7 +4,6 @@ local Event = require('__stdlib__/stdlib/event/event')
 local Gui = require('__stdlib__/stdlib/event/gui')
 local UiCharacterInventory = require "src.UiCharacterInventory"
 local UiNetworkItems = require "src.UiNetworkItems"
-local log = require("src.log_console").log
 
 local M = {}
 
@@ -74,6 +73,8 @@ function M.create_gui(player_index)
     type = "flow",
     direction = "vertical",
   })
+  vert_flow.style.horizontally_stretchable = true
+  vert_flow.style.vertically_stretchable = true
 
   -- add the header/toolbar
   local header_flow = vert_flow.add({
@@ -141,15 +142,16 @@ function M.create_gui(player_index)
     --type = "frame",
     --style = "frame_without_left_and_right_side",
   })
-  mid_pane.style.size = { 467, 828 }
+  --mid_pane.style.size = { 467, 828 }
 
+--[[
   local right_pane = body_flow.add({
     type = "flow",
     --type = "frame",
     --style = "frame_without_left_side",
   })
   right_pane.style.size = { 476, 828 }
-
+]]
   local self = {
     elems = elems,
     pinned = false,
@@ -160,10 +162,13 @@ function M.create_gui(player_index)
   player.opened = elems.main_window
 
   self.children.character_inventory = UiCharacterInventory.create(left_pane, player)
-  --M.add_character_inventory(self, left_pane)
   self.children.network_items = UiNetworkItems.create(mid_pane, player)
-  --M.add_chest_inventory(self, mid_pane)
-  M.add_net_inventory(self, right_pane)
+
+  -- cross-link to try inventory transfers
+  self.children.character_inventory.peer = self.children.network_items
+  self.children.network_items.peer = self.children.character_inventory.peer
+
+  --M.add_net_inventory(self, right_pane)
 end
 
 function M.add_chest_inventory(self, frame)
@@ -250,7 +255,6 @@ end
 
 -- triggered if the GUI is removed from self.player.opened
 function M.on_gui_closed(event)
-  log("on gui closed")
   local self = M.get_gui(event.player_index)
   if self ~= nil then
     if not self.pinned then

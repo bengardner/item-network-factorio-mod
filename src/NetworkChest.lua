@@ -402,6 +402,18 @@ function M.vehicle_update_entity(entity)
   return status
 end
 
+--[[
+entity status that we'd run into:
+  working
+  full_output
+  no_ingredients
+  no_fuel
+
+While we could wait until the entity stops working, it would be better to service it
+before that happens.
+If we wait, then all are obvious except no_ingredients.
+To handle that we'd need to know the last recipe.
+]]
 function M.furnace_update_entity(entity)
   if not entity.valid then
     return GlobalState.UPDATE_STATUS.INVALID
@@ -442,8 +454,8 @@ function M.furnace_update_entity(entity)
     if oinv ~= nil and oinv ~= finv then
       for idx = 1, #oinv do
         local stack = oinv[idx]
-        if stack.valid_for_read and stack.count > cfg.max_out then
-          local n_take = stack.count - (cfg.min_out or 0)
+        if stack.valid_for_read and (stack.count > cfg.max_out or entity.status == defines.entity_status.full_output) then
+          local n_take = stack.count
           if n_take > 0 then
             GlobalState.increment_item_count(stack.name, stack.count)
             stack.count = stack.count - n_take
@@ -453,6 +465,52 @@ function M.furnace_update_entity(entity)
       end
     end
   end
+
+  -- fill the ore when empty
+  if entity.type == "furnace" then
+    if entity.status == defines.entity_status.no_ingredients then
+      local sinv = entity.get_inventory(defines.inventory.furnace_source)
+      for _, ing in ipairs(entity.previous_recipe.ingredients) do
+        local prot = game.item_prototypes[ing.name]
+        if prot ~= nil then
+          local n_in_net = GlobalState.get_item_count(ing.name)
+          if n_in_net > 0 then
+            local n_added = sinv.insert({ name = ing.name, count = n_in_net })
+            if n_added > 0 then
+              GlobalState.increment_item_count(ing.name, -n_added)
+            end
+          end
+        end
+      end
+    end
+  end
+  --[[
+    if entity.status ~= defines.entity_status.working then
+      clog("furnace: %s recipe=%s ing=%s", entity.status, entity.previous_recipe.name, serpent.dump(entity.previous_recipe.ingredients))
+    end
+    local sinv = entity.get_inventory(defines.inventory.furnace_source)
+    if sinv ~= nil then
+      for idx = 1, #sinv do
+        local stack = sinv[idx]
+        if stack.valid_for_read then
+          local prot = game.item_prototypes[stack.name]
+          if prot ~= nil then
+            -- add 1/4 stack if below 1/4 stack
+            local n_wanted = math.ceil(prot.stack_size / 4)
+            if stack.count < n_wanted then
+              local n_in_net = GlobalState.get_item_count(stack.name)
+              local n_trans = math.min(n_wanted, n_in_net)
+              if n_trans > 0 then
+                stack.count = stack.count + n_trans
+                GlobalState.increment_item_count(stack.name, -n_trans)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  ]]
   return status
 end
 

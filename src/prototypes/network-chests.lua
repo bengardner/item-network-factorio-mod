@@ -1,12 +1,7 @@
 --[[
-Game plan:
-duplicate logistic chests.
- - Provider : golem will grab from this to satisfy a request and grab whatever is available if nearby
- - Storage  : golem will grab from and insert into this chest
-   drop off point when it has too much inventory
- - Requester (buffer): golem will read requests and fetch material to satisfy requests
-
- tem-network will satisfy requests, so this is bunk.
+Bulk Chests:
+ - network-chest-provider : fitler with bar - will move anything in the chest to network (respecting global limit)
+ - network-chest-requester : use logistic-chest-buffer as base, satisfy requests from net (as usual?)
 ]]
 local constants = require "src.constants"
 local Paths = require "src.Paths"
@@ -30,7 +25,7 @@ local function add_chest(variant)
   entity.icon = Paths.graphics .. "/icons/network-chest-" .. variant .. ".png"
 
   -- update inventory
-  entity.inventory_size = constants.NUM_INVENTORY_SLOTS
+  entity.inventory_size = 39 -- constants.NUM_INVENTORY_SLOTS
   entity.inventory_type = "with_filters_and_bar"
 
 
@@ -59,7 +54,8 @@ local function add_chest(variant)
 end
 
 function M.main()
-  add_chest("requester")
+  -- FIXME: these should be the logistic chests with inv size of 19
+  --add_chest("requester") -- currently useless
   add_chest("provider")
 end
 

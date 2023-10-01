@@ -39,11 +39,13 @@ function M.on_gui_opened(player, chest_entity)
     caption = "Add Item",
     tags = { event = UiConstants.ADD_ITEM_BTN_NAME },
   })
+  --[[
   requests_header_flow.add({
     type = "button",
     caption = "Auto",
     tags = { event = UiConstants.AUTO_ITEM_BTN_NAME },
   })
+  ]]
   -- add_request_btn.style.width = 40
   local requests_scroll = requests_flow.add({
     type = "scroll-pane",
@@ -166,7 +168,7 @@ end
 function M.log_chest_state(entity, info)
   local inv = entity.get_output_inventory()
   GlobalState.log_entity("Chest:", entity)
-  game.print(string.format(" - chest has %s requests, bar=%s/%s", #info.requests, inv.get_bar(), #inv))
+  game.print(string.format(" - chest has %s requests, bar=%s/%s %s", #info.requests, inv.get_bar(), #inv, serpent.line(info.requests)))
   if inv.is_filtered() then
     for i = 1, #inv do
       local filt = inv.get_filter(i)
@@ -296,7 +298,7 @@ function M.add_request_element(request, parent)
   })
   edit_btn.style.width = 60
 ]]
-  local pad = flow.add({ type= "empty-widget" })
+  local pad = flow.add({ type="empty-widget" })
   pad.style.horizontally_stretchable = true
 
   flow.add {
@@ -334,6 +336,9 @@ function M.update_request_element(request, element)
     )
   else
     before_item_label = "Provide"
+    if request.no_limit == true then
+      request.limit = 0
+    end
     if request.limit > 0 then
       after_item_label = string.format(
         "when network has less than %d and buffer %d.",
@@ -355,12 +360,16 @@ end
 function M.get_ui_requests_from_chest_requests(chest_requests)
   local requests = {}
   for _, request in ipairs(chest_requests) do
+    if request.no_limit == true then
+      request.limit = 0
+    end
     table.insert(requests, {
       type = request.type,
       id = GlobalState.rand_hex(16),
       item = request.item,
       buffer = request.buffer,
       limit = request.limit,
+      --no_limit = request.no_limit,
     })
   end
   return requests
@@ -412,14 +421,18 @@ function M.close_main_frame(player, save_requests)
   if save_requests then
     local requests = {}
     for _, request in ipairs(ui.network_chest.requests) do
-      table.insert(requests,
-        {
-          id = request.id,
-          type = request.type,
-          item = request.item,
-          buffer = request.buffer,
-          limit = request.limit,
-        })
+      local rr = {
+        id = request.id,
+        type = request.type,
+        item = request.item,
+        buffer = request.buffer,
+        limit = request.limit,
+      }
+      -- compat with upstream
+      if rr.limit == 0 then
+        rr.no_limit = true
+      end
+      table.insert(requests, rr)
     end
     if ui.network_chest.chest_entity.valid then
       GlobalState.set_chest_requests(

@@ -60,11 +60,6 @@ function M.inner_setup()
     M.vehicle_scan_surfaces()
   end
 
-  if global.mod.furnaces == nil then
-    global.mod.furnaces = {} -- furnaces[unit_number] = entity
-    M.furnace_scan_surfaces()
-  end
-
   if global.mod.logistic == nil then
     global.mod.logistic = {} -- key=unit_number, val=entity
   end
@@ -114,10 +109,10 @@ function M.inner_setup()
     M.limit_scan()
   end
   -- TEST: remove when good
-  M.limit_scan()
+  --M.limit_scan()
 
-  -- TEST: reset the queues
-  M.reset_queues()
+  -- TEST: reset the queues; causes desync in multiplayer
+  --M.reset_queues()
 end
 
 function M.reset_queues()
@@ -135,22 +130,24 @@ function M.reset_queues()
   for unum, _ in pairs(global.mod.logistic) do
     Queue.push(global.mod.scan_queue, unum)
   end
-  for unum, _ in pairs(global.mod.furnaces) do
-    Queue.push(global.mod.scan_queue, unum)
-  end
 end
 
 -- scan existing tanks and chests and use the max "give" limit as the item limit
 function M.limit_scan(item)
   local limits = global.mod.item_limits
+  local unlimited = 5000000000 -- "5G"
 
   for _, info in pairs(global.mod.chests) do
     if info.requests ~= nil then
       for _, req in ipairs(info.requests) do
         if req.type == "give" then
           local old_limit = limits[req.item]
-          if old_limit == nil or old_limit < req.limit then
-            limits[req.item] = req.limit
+          local new_limit = req.limit
+          if req.no_limit == true then
+            new_limit = unlimited
+          end
+          if old_limit == nil or old_limit < new_limit then
+            limits[req.item] = new_limit
           end
         end
       end
@@ -164,8 +161,12 @@ function M.limit_scan(item)
         if config.temperature ~= nil and config.fluid ~= nil then
           local key = M.fluid_temp_key_encode(config.fluid, config.temperature)
           local old_limit = limits[key]
-          if old_limit == nil or old_limit < config.limit then
-            limits[config.fluid] = config.limit
+          local new_limit = config.limit
+          if config.no_limit == true then
+            new_limit = unlimited
+          end
+          if old_limit == nil or old_limit < new_limit then
+            limits[config.fluid] = new_limit
             --game.print(string.format("updated limit %s %s", key, config.limit))
           end
         end
@@ -336,12 +337,14 @@ function M.rand_hex(len)
   return table.concat(chars, "")
 end
 
+--[[
 function M.shuffle(list)
   for i = #list, 2, -1 do
     local j = global.mod.rand(i)
     list[i], list[j] = list[j], list[i]
   end
 end
+]]
 
 -- get a table of all logistic item names that we should supply
 -- called once at each startup to see if the chest list changed
@@ -424,56 +427,6 @@ end
 function M.vehicle_del(unit_number)
   global.mod.vehicles[unit_number] = nil
 end
-
--- min_fuel sets the minimum fuel items (add if not enough) (required)
--- max_fuel sets the maximum fuel items (remove if too many) (default nil=don't remove)
--- max_out sets the maximum count in the output inventory, triggering a remove (default nil=don't remove)
--- min_out sets the minimum, to leave some in the furnace (default 0)
-local furnace_names = {
-  ["stone-furnace"]       = { min_fuel = 5, min_out = 1, max_out = 10 },
-  ["steel-furnace"]       = { min_fuel = 5, min_out = 1, max_out = 10 },
-  ["boiler"]              = { min_fuel = 20 },
-  ["burner-mining-drill"] = { min_fuel = 5, max_fuel = 20 },
-  ["burner-inserter"]     = { min_fuel = 5 },
-}
-
-function M.get_furnace_config(name)
-  return furnace_names[name]
-end
-
-function M.is_furnace_entity(name)
-  return furnace_names[name] ~= nil
-end
-
-function M.furnace_scan_surfaces()
-  local names = {}
-  for k, _ in pairs(furnace_names) do
-    table.insert(names, k)
-  end
-  for _, surface in pairs(game.surfaces) do
-    local entities = surface.find_entities_filtered { name = names }
-    for _, entity in ipairs(entities) do
-      M.furnace_add_entity(entity)
-    end
-  end
-end
-
-function M.get_furnace_entity(unit_number)
-  return global.mod.furnaces[unit_number]
-end
-
--- add a vehicle, assume the caller knows what he is doing
-function M.furnace_add_entity(entity)
-  if global.mod.furnaces[entity.unit_number] == nil then
-    global.mod.furnaces[entity.unit_number] = entity
-    Queue.push(global.mod.scan_queue, entity.unit_number)
-  end
-end
-
-function M.furnace_del(unit_number)
-  global.mod.furnaces[unit_number] = nil
-end
-
 
 function M.sensor_add(entity)
   global.mod.sensors[entity.unit_number] = entity
@@ -708,7 +661,7 @@ function M.update_queue(update_entity)
   end
 
   -- finally, swap a random entity to the front of the queue to introduce randomness in update order.
-  Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
+  --Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
 end
 
 -- translate a tile name to the item name ("stone-path" => "stone-brick")
@@ -738,7 +691,7 @@ function M.resolve_name(name)
 end
 
 function M.update_queue_log()
-  game.print(string.format("ative: %s  inactive: %s", global.mod.scan_queue.size, global.mod.scan_queue_inactive.size))
+  game.print(string.format("item-network queue sizes: active: %s  inactive: %s", global.mod.scan_queue.size, global.mod.scan_queue_inactive.size))
 end
 
 function M.update_queue_dual(update_entity)
@@ -851,7 +804,7 @@ function M.update_queue_multi(update_entity)
   end
 
   -- finally, swap a random entity to the front of the queue to introduce randomness in update order.
-  Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
+  --Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
 end
 
 M.update_queue = M.update_queue_dual

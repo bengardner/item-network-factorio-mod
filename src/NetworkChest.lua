@@ -53,10 +53,6 @@ local function generic_create_handler(event)
     GlobalState.logistic_add_entity(entity)
   elseif GlobalState.is_vehicle_entity(entity.name) then
     GlobalState.vehicle_add_entity(entity)
-  elseif GlobalState.is_furnace_entity(entity.name) then
-    GlobalState.furnace_add_entity(entity)
-  elseif util.string_starts_with(entity.name, "golem-chest-") then
-    entity.active = false
   end
 end
 
@@ -113,6 +109,7 @@ function M.generic_destroy_handler(event, opts)
   if entity.unit_number == nil then
     return
   end
+
   if util.string_starts_with(entity.name, "network-chest") then
     GlobalState.put_chest_contents_in_network(entity)
     if not opts.do_not_delete_entity then
@@ -329,54 +326,72 @@ function M.inventory_handle_requests(entity, inv, old_status)
   return status
 end
 
-function M.updatePlayers()
-  if not global.mod.network_chest_has_been_placed then
+function M.update_player(player, enable_logistics)
+  local enable_player = settings.get_player_settings(player.index)
+  ["item-network-enable-player-logistics"].value
+
+  local entity = player.character
+  if entity == nil then
     return
   end
 
-  for _, player in pairs(game.players) do
-    local enable_trash = settings.get_player_settings(player.index)
-      ["item-network-enable-player-logistics"].value
+  if enable_logistics and not entity.force.character_logistic_requests then
+    entity.force.character_logistic_requests = true
+    if entity.force.character_trash_slot_count < 10 then
+      entity.force.character_trash_slot_count = 10
+    end
+  end
 
-    if enable_trash then
-      -- put all trash into network
-      GlobalState.put_inventory_in_network(player.get_inventory(defines.inventory.character_trash))
+  if enable_player then
+    -- put all trash into network
+    GlobalState.put_inventory_in_network(player.get_inventory(defines.inventory.character_trash))
 
-      -- get contents of player inventory
-      local main_inv = player.get_inventory(defines.inventory.character_main)
-      if main_inv ~= nil then
-        local character = player.character
-        if character ~= nil and character.character_personal_logistic_requests_enabled then
-          local main_contents = main_inv.get_contents()
-          local cursor_stack = player.cursor_stack
-          if cursor_stack ~= nil and cursor_stack.valid_for_read then
-            main_contents[cursor_stack.name] =
-              (main_contents[cursor_stack.name] or 0) + cursor_stack.count
-          end
+    -- get contents of player inventory
+    local main_inv = player.get_inventory(defines.inventory.character_main)
+    if main_inv ~= nil then
+      local character = player.character
+      if character ~= nil and character.character_personal_logistic_requests_enabled then
+        local main_contents = main_inv.get_contents()
+        local cursor_stack = player.cursor_stack
+        if cursor_stack ~= nil and cursor_stack.valid_for_read then
+          main_contents[cursor_stack.name] =
+            (main_contents[cursor_stack.name] or 0) + cursor_stack.count
+        end
 
-          -- scan logistic slots and transfer to character
-          for logistic_idx = 1, character.request_slot_count do
-            local param = player.get_personal_logistic_slot(logistic_idx)
-            if param ~= nil and param.name ~= nil then
-              local available_in_network = GlobalState.get_item_count(param.name)
-              local current_amount = main_contents[param.name] or 0
-              local delta = math.min(available_in_network,
-                math.max(0, param.min - current_amount))
-              if delta > 0 then
-                local n_transfered = main_inv.insert({
-                  name = param.name,
-                  count = delta,
-                })
-                GlobalState.set_item_count(
-                  param.name,
-                  available_in_network - n_transfered
-                )
-              end
+        -- scan logistic slots and transfer to character
+        for logistic_idx = 1, character.request_slot_count do
+          local param = player.get_personal_logistic_slot(logistic_idx)
+          if param ~= nil and param.name ~= nil then
+            local available_in_network = GlobalState.get_item_count(param.name)
+            local current_amount = main_contents[param.name] or 0
+            local delta = math.min(available_in_network,
+              math.max(0, param.min - current_amount))
+            if delta > 0 then
+              local n_transfered = main_inv.insert({
+                name = param.name,
+                count = delta,
+              })
+              GlobalState.set_item_count(
+                param.name,
+                available_in_network - n_transfered
+              )
             end
           end
         end
       end
     end
+  end
+end
+
+function M.updatePlayers()
+  if not global.mod.network_chest_has_been_placed then
+    return
+  end
+
+  local enable_logistics = settings.global["item-network-force-enable-logistics"].value
+
+  for _, player in pairs(game.players) do
+    M.update_player(player, enable_logistics)
   end
 end
 
@@ -399,118 +414,6 @@ function M.vehicle_update_entity(entity)
       entity.get_inventory(defines.inventory.spider_trash),
       entity.get_inventory(defines.inventory.spider_trunk))
   end
-  return status
-end
-
---[[
-entity status that we'd run into:
-  working
-  full_output
-  no_ingredients
-  no_fuel
-
-While we could wait until the entity stops working, it would be better to service it
-before that happens.
-If we wait, then all are obvious except no_ingredients.
-To handle that we'd need to know the last recipe.
-]]
-function M.furnace_update_entity(entity)
-  if not entity.valid then
-    return GlobalState.UPDATE_STATUS.INVALID
-  end
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
-  local cfg = GlobalState.get_furnace_config(entity.name)
-
-  -- try to top off the fuel
-  local fuel_name = "coal"
-  local n_avail = GlobalState.get_item_count(fuel_name)
-  local finv = entity.get_fuel_inventory()
-  if finv ~= nil then
-    local fuel_count = finv.get_item_count(fuel_name)
-    -- do we need to add fuel?
-    if cfg.min_fuel ~= nil and fuel_count < cfg.min_fuel then
-      local n_trans = math.max(0, math.min(n_avail, cfg.min_fuel - fuel_count))
-      if n_trans > 0 then
-        local n_added = finv.insert({name = fuel_name, count = n_trans })
-        if n_added > 0 then
-          --clog("loaded %s (%s) info %s", fuel_count, n_added, entity.name)
-          GlobalState.increment_item_count(fuel_name, -n_added)
-          status = GlobalState.UPDATE_STATUS.UPDATED
-        end
-      end
-    elseif cfg.max_fuel ~= nil and fuel_count > cfg.max_fuel then
-      local n_taken = finv.remove({ name=fuel_name, count=(fuel_count - cfg.min_fuel) })
-      if n_taken > 0 then
-        GlobalState.increment_item_count(fuel_name, n_taken)
-        status = GlobalState.UPDATE_STATUS.UPDATED
-      end
-    end
-  end
-
-  -- take any full stacks
-  if cfg.max_out ~= nil then
-    -- don't do anything if the fuel inv is the output inv
-    local oinv = entity.get_output_inventory()
-    if oinv ~= nil and oinv ~= finv then
-      for idx = 1, #oinv do
-        local stack = oinv[idx]
-        if stack.valid_for_read and (stack.count > cfg.max_out or entity.status == defines.entity_status.full_output) then
-          local n_take = stack.count
-          if n_take > 0 then
-            GlobalState.increment_item_count(stack.name, stack.count)
-            stack.count = stack.count - n_take
-            status = GlobalState.UPDATE_STATUS.UPDATED
-          end
-        end
-      end
-    end
-  end
-
-  -- fill the ore when empty
-  if entity.type == "furnace" then
-    if entity.status == defines.entity_status.no_ingredients then
-      local sinv = entity.get_inventory(defines.inventory.furnace_source)
-      for _, ing in ipairs(entity.previous_recipe.ingredients) do
-        local prot = game.item_prototypes[ing.name]
-        if prot ~= nil then
-          local n_in_net = GlobalState.get_item_count(ing.name)
-          if n_in_net > 0 then
-            local n_added = sinv.insert({ name = ing.name, count = n_in_net })
-            if n_added > 0 then
-              GlobalState.increment_item_count(ing.name, -n_added)
-            end
-          end
-        end
-      end
-    end
-  end
-  --[[
-    if entity.status ~= defines.entity_status.working then
-      clog("furnace: %s recipe=%s ing=%s", entity.status, entity.previous_recipe.name, serpent.dump(entity.previous_recipe.ingredients))
-    end
-    local sinv = entity.get_inventory(defines.inventory.furnace_source)
-    if sinv ~= nil then
-      for idx = 1, #sinv do
-        local stack = sinv[idx]
-        if stack.valid_for_read then
-          local prot = game.item_prototypes[stack.name]
-          if prot ~= nil then
-            -- add 1/4 stack if below 1/4 stack
-            local n_wanted = math.ceil(prot.stack_size / 4)
-            if stack.count < n_wanted then
-              local n_in_net = GlobalState.get_item_count(stack.name)
-              local n_trans = math.min(n_wanted, n_in_net)
-              if n_trans > 0 then
-                stack.count = stack.count + n_trans
-                GlobalState.increment_item_count(stack.name, -n_trans)
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-  ]]
   return status
 end
 
@@ -777,7 +680,7 @@ local function update_network_chest_configured_common(info, inv, contents)
     if req.type == "take" then
       local n_have = contents[req.item] or 0
       local n_innet = GlobalState.get_item_count(req.item)
-      local n_avail = math.max(0, n_innet - req.limit)
+      local n_avail = math.max(0, n_innet - (req.limit or 0))
       local n_want = req.buffer
       if n_want > n_have then
         local n_transfer = math.min(n_want - n_have, n_avail)
@@ -956,6 +859,7 @@ local function update_tank(info)
   local buffer = info.config.buffer
   local fluid = info.config.fluid
   local temp = info.config.temperature
+  local no_limit = (info.config.no_limit == true)
 
   if type == "give" then
     local fluidbox = info.entity.fluidbox
@@ -968,6 +872,9 @@ local function update_tank(info)
         )
         local key = GlobalState.fluid_temp_key_encode(fluid_instance.name, fluid_instance.temperature)
         local gl_limit = GlobalState.get_limit(key)
+        if no_limit then
+          limit = gl_limit
+        end
         local n_give = math.max(0, fluid_instance.amount)
         local n_take = math.max(0, math.max(limit, gl_limit) - current_count)
         local n_transfer = math.floor(math.min(n_give, n_take))
@@ -1081,11 +988,6 @@ local function update_entity(unit_number)
   entity = GlobalState.get_vehicle_entity(unit_number)
   if entity ~= nil then
     return M.vehicle_update_entity(entity)
-  end
-
-  entity = GlobalState.get_furnace_entity(unit_number)
-  if entity ~= nil then
-    return M.furnace_update_entity(entity)
   end
 
   return GlobalState.UPDATE_STATUS.INVALID

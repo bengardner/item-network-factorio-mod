@@ -266,8 +266,8 @@ local function limit_set_edit_item(edit_flow, item_name, item_temp)
     local prot = game.item_prototypes[item_name]
     if prot ~= nil then
       local item_limit = GlobalState.get_limit(item_name)
-      clog("limit_set_edit_item: item [%s] group [%s] subgroup [%s] limit=%s",
-        item_name, prot.group.name, prot.subgroup.name, item_limit)
+      --clog("limit_set_edit_item: item [%s] group [%s] subgroup [%s] limit=%s",
+      --  item_name, prot.group.name, prot.subgroup.name, item_limit)
       limit_set_edit_type(edit_flow, 1)
       edit_flow.item_edit[UiConstants.NV_LIMIT_SELECT_ITEM].elem_value = item_name
       edit_flow.new_limit.text = string.format("%s", item_limit)
@@ -280,7 +280,7 @@ local function limit_set_edit_item(edit_flow, item_name, item_temp)
         end
         local key = GlobalState.fluid_temp_key_encode(item_name, item_temp)
         local item_limit = GlobalState.get_limit(key)
-        clog("limit_set_edit_item: fluid [%s] limit=%s", key , item_limit)
+        --clog("limit_set_edit_item: fluid [%s] limit=%s", key , item_limit)
         limit_set_edit_type(edit_flow, 2)
         edit_flow.fluid_edit[UiConstants.NV_LIMIT_SELECT_FLUID].elem_value = item_name
         edit_flow.fluid_edit.temperature.text = string.format("%s", item_temp)

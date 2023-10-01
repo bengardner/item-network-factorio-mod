@@ -165,7 +165,7 @@ function M.create_gui(player_index)
 
   -- cross-link to try inventory transfers
   self.children.character_inventory.peer = self.children.network_items
-  self.children.network_items.peer = self.children.character_inventory.peer
+  self.children.network_items.peer = self.children.character_inventory
 
   -- test
   for _, info in pairs(GlobalState.get_chests()) do

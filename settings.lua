@@ -28,6 +28,12 @@ function M.main()
       default_value = 20,
       minimum_value = 1,
     },
+    {
+      type = "bool-setting",
+      name = "item-network-force-enable-logistics",
+      setting_type = "runtime-global",
+      default_value = true,
+    },
   })
 end
 

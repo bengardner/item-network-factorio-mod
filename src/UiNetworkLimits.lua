@@ -325,8 +325,8 @@ local function limit_set_edit_item(self, item_name, item_temp)
     local prot = game.item_prototypes[item_name]
     if prot ~= nil then
       local item_limit = GlobalState.get_limit(item_name)
-      clog("limit_set_edit_item: item [%s] group [%s] subgroup [%s] limit=%s",
-        item_name, prot.group.name, prot.subgroup.name, item_limit)
+      --clog("limit_set_edit_item: item [%s] group [%s] subgroup [%s] limit=%s",
+      --  item_name, prot.group.name, prot.subgroup.name, item_limit)
       limit_set_edit_type(self, 1)
       self.elems.item_elem.elem_value = item_name
       set_new_limit(self, item_limit)
@@ -338,7 +338,7 @@ local function limit_set_edit_item(self, item_name, item_temp)
         end
         local key = GlobalState.fluid_temp_key_encode(item_name, item_temp)
         local item_limit = GlobalState.get_limit(key)
-        clog("limit_set_edit_item: fluid [%s] limit=%s", key , item_limit)
+        --clog("limit_set_edit_item: fluid [%s] limit=%s", key , item_limit)
         limit_set_edit_type(self, 2)
         self.elems.fluid_elem.elem_value = item_name
         self.elems.temperature.text = string.format("%s", item_temp)
@@ -396,7 +396,7 @@ local function on_limit_save(event)
     -- item
     local item_name = self.elems.item_elem.elem_value
     if item_name ~= nil then
-      clog("setting item %s limit %s", item_name, new_limit)
+      --clog("setting item %s limit %s", item_name, new_limit)
       if GlobalState.set_limit(item_name, new_limit) then
         self.refresh(self)
       end
@@ -407,7 +407,7 @@ local function on_limit_save(event)
     local fluid_temp = tonumber(self.elems.temperature.text)
     if fluid_name ~= nil and fluid_temp ~= nil then
       local key = GlobalState.fluid_temp_key_encode(fluid_name, fluid_temp)
-      clog("setting fluid %s limit %s", key, new_limit)
+      --clog("setting fluid %s limit %s", key, new_limit)
       if GlobalState.set_limit(key, new_limit) then
         self.refresh(self)
       end

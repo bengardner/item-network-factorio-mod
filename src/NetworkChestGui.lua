@@ -717,6 +717,7 @@ function Modal.try_to_auto(player_index)
   end
 
   -- print the chest_req
+  --[[
   game.print("Chest Req")
   for _, rr in ipairs(chest_req) do
     game.print(string.format(" -- %s @ %s", rr.item, rr.buffer))
@@ -726,10 +727,11 @@ function Modal.try_to_auto(player_index)
     game.print(string.format(" -- type=%s item=%s id=%s",
       old_req.type, old_req.item, old_req.id))
   end
+  ]]
 
   -- convert to the ui format
   local ui_req = M.get_ui_requests_from_chest_requests(chest_req)
-  game.print("UI Req")
+  --game.print("UI Req")
   for _, rr in ipairs(ui_req) do
     --local edit_req_id = ""
     local edit_mode = "add"
@@ -749,9 +751,9 @@ function Modal.try_to_auto(player_index)
         break
       end
     end
-    game.print(string.format(" -- mode=%s type=%s item=%s buffer=%s limit=%s id=%s",
-      edit_mode,
-      rr.type, rr.item, rr.buffer, rr.limit, rr.id))
+    --game.print(string.format(" -- mode=%s type=%s item=%s buffer=%s limit=%s id=%s",
+    --  edit_mode,
+    --  rr.type, rr.item, rr.buffer, rr.limit, rr.id))
 
     --table.insert(chest_ui.requests, request)
     --M.add_request_element(request, chest_ui.requests_scroll)
@@ -787,7 +789,7 @@ function Modal.try_to_confirm(player_index)
     return
   end
 
-  game.print(string.format("try_to_confirm: rtype=%s item=%s buffer=%s limit=%s", request_type, item, buffer, limit))
+  --game.print(string.format("try_to_confirm: rtype=%s item=%s buffer=%s limit=%s", request_type, item, buffer, limit))
 
   -- "take" must buffer something, "give" can have no buffer.
   -- give limit=0 means use global limit

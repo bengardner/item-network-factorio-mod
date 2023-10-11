@@ -289,9 +289,53 @@ function M.on_entity_settings_pasted(event)
         GlobalState.set_chest_requests(dest.unit_number, requests)
       end
     end
+
   elseif dest.name == "network-tank" then
     if source.name == "network-tank" then
       GlobalState.copy_tank_config(source.unit_number, dest.unit_number)
+    end
+
+  elseif dest.name == "network-chest-provider" then
+    if source.type == "assembling-machine" then
+      -- paste a filter slot per
+      local recipe = source.get_recipe()
+      local dinv = dest.get_output_inventory()
+      if recipe ~= nil and dinv ~= nil then
+        -- move items to the net to keep things simple
+        GlobalState.put_inventory_in_network(dinv)
+
+        -- get existing filters
+        local filters = {}
+        local fidx = 1
+        while fidx <= #dinv do
+          local cf = dinv.get_filter(fidx)
+          if cf ~= nil then
+            filters[cf] = true
+          end
+          fidx = fidx + 1
+        end
+
+        -- add new filters
+        for _, prod in ipairs(recipe.products) do
+          if prod.type == "item" then
+            filters[prod.name] = true
+          end
+        end
+
+        -- update the filters
+        fidx = 1
+        for name, _ in pairs(filters) do
+          dinv.set_filter(fidx, name)
+          fidx = fidx + 1
+        end
+        dinv.set_bar(fidx)
+
+        -- clear any extra filters (shouldn't happen)
+        while fidx <= #dinv do
+          dinv.set_filter(fidx, nil)
+          fidx = fidx + 1
+        end
+      end
     end
   end
 end
@@ -1094,8 +1138,6 @@ function M.check_alerts()
               local tent = entity.get_upgrade_target()
               if tent ~= nil then
                 M.handle_missing_material(entity, tent.name)
-              else
-                GlobalState.log_entity("Missing", entity)
               end
             end
           end

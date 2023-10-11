@@ -21,6 +21,7 @@ M.event_handlers = {
       NetworkChestGui.open_modal(player, "add")
     end,
   },
+  --[[
   {
     name = UiConstants.AUTO_ITEM_BTN_NAME,
     event = "on_gui_click",
@@ -33,6 +34,7 @@ M.event_handlers = {
       NetworkChestGui.Modal.try_to_auto(event.player_index)
     end,
   },
+  ]]
   {
     name = UiConstants.MODAL_CHOOSE_TAKE_BTN_NAME,
     event = "on_gui_checked_state_changed",

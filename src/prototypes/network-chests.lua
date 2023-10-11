@@ -34,6 +34,7 @@ local function add_chest(variant)
   item.name = name
   item.place_result = name
   item.order = "a[items]-0[network-chest]-" .. variant
+  item.icon = Paths.graphics .. "/icons/network-chest-" .. variant .. ".png"
 
 
   -- create a dummy inventory

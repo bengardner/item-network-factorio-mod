@@ -6,8 +6,10 @@
 local M = {}
 
 function M.log(...)
+  local text = string.format(...)
+  print(text)
   if game ~= nil then
-    game.print(string.format(...))
+    game.print(text)
   end
 end
 

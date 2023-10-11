@@ -40,7 +40,7 @@ function M.open_main_frame(player_index)
   end
 
   -- log something for debug
-  GlobalState.update_queue_log()
+  --GlobalState.update_queue_log()
 
   --local width = M.WIDTH
   local height = M.HEIGHT + 22

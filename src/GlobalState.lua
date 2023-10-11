@@ -94,7 +94,7 @@ function M.inner_setup()
       end
     end
     if n_tanks > 0 then
-      game.print(
+      clog(
         "Migrated Item Network fluids to include temperatures. Warning: If you provide a fluid at a non-default temperature (like steam), you will have to update every requester tank to use the new fluid temperature.")
     end
     global.mod.has_run_fluid_temp_conversion = true
@@ -678,6 +678,14 @@ function M.resolve_name(name)
     end
   end
 
+  prot = game.entity_prototypes[name]
+  if prot ~= nil then
+    local mp = prot.mineable_properties
+    if mp.minable and #mp.products == 1 then
+      return mp.products[1].name
+    end
+  end
+
   -- FIXME: figure out how to not hard-code this
   if name == "curved-rail" then
     return "rail", 4
@@ -686,12 +694,12 @@ function M.resolve_name(name)
     return "rail", 1
   end
 
-  game.print(string.format("Unable to resolve %s", name))
+  clog("Unable to resolve %s", name)
   return nil
 end
 
 function M.update_queue_log()
-  game.print(string.format("item-network queue sizes: active: %s  inactive: %s", global.mod.scan_queue.size, global.mod.scan_queue_inactive.size))
+  clog("item-network queue sizes: active: %s  inactive: %s", global.mod.scan_queue.size, global.mod.scan_queue_inactive.size)
 end
 
 function M.update_queue_dual(update_entity)
@@ -812,11 +820,11 @@ M.update_queue = M.update_queue_dual
 function M.log_entity(title, entity)
   if entity ~= nil then
     if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
-      game.print(string.format("%s: [%s] GHOST %s @ (%s,%s)",
-        title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y))
+      clog("%s: [%s] GHOST %s @ (%s,%s)",
+        title, entity.unit_number, entity.ghost_name, entity.position.x, entity.position.y)
     else
-      game.print(string.format("%s: [%s] %s @ (%s,%s)",
-        title, entity.unit_number, entity.name, entity.position.x, entity.position.y))
+      clog("%s: [%s] %s @ (%s,%s)",
+        title, entity.unit_number, entity.name, entity.position.x, entity.position.y)
     end
   end
 end
@@ -839,7 +847,7 @@ function M.auto_network_chest(entity)
   local entities = entity.surface.find_entities_filtered{ position=entity.position, radius=3,
       type={"inserter", "loader", "mining-drill" }}
 
-  game.print(string.format(" ++ found %s entities", #entities))
+  clog(" ++ found %s entities", #entities)
 
   -- NOTE: is seems like the inserter doesn't set pickup_target or drop_target until it needs to
 --[[
@@ -856,10 +864,10 @@ function M.auto_network_chest(entity)
     if ent.unit_number ~= nil then
       if ent.drop_target == entity then
         M.log_entity(string.format("%s is drop_target:", idx), ent)
-        game.print(string.format(" entity name=%s type=%s", ent.name, ent.type))
+        clog(" entity name=%s type=%s", ent.name, ent.type)
       else
         M.log_entity(string.format("%s NOT drop_target:", idx), ent)
-        game.print(string.format(" entity name=%s type=%s", ent.name, ent.type))
+        clog(" entity name=%s type=%s", ent.name, ent.type)
       end
     end
     --[[

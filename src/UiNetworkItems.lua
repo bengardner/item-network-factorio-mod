@@ -209,7 +209,7 @@ function NetInv:refresh()
     end
   end
 
-  self.elems.title.caption = string.format("Network Items - %s items, %s total", total_items, total_count)
+  self.elems.title.caption = string.format("Network Items - %.0f items, %.0f total", total_items, total_count)
 end
 
 --[[

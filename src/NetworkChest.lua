@@ -899,8 +899,8 @@ end
 local function update_tank(info)
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
   local type = info.config.type
-  local limit = info.config.limit
-  local buffer = info.config.buffer
+  local limit = info.config.limit or 5000
+  local buffer = info.config.buffer or 1000
   local fluid = info.config.fluid
   local temp = info.config.temperature
   local no_limit = (info.config.no_limit == true)

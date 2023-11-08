@@ -135,7 +135,7 @@ end
 -- scan existing tanks and chests and use the max "give" limit as the item limit
 function M.limit_scan(item)
   local limits = global.mod.item_limits
-  local unlimited = 5000000000 -- "5G"
+  local unlimited = 2000000000 -- "2G"
 
   for _, info in pairs(global.mod.chests) do
     if info.requests ~= nil then
@@ -200,9 +200,13 @@ function M.set_limit(item_name, value)
     -- don't use get_limit()
     local old_value = global.mod.item_limits[item_name]
     value = tonumber(value)
-    if value ~= nil and value ~= old_value then
-      global.mod.item_limits[item_name] = value
-      return true
+    if value ~= nil then
+      -- some game code paths use a int32 for the item count
+      value = math.min(value, 2000000000)
+      if value ~= old_value then
+        global.mod.item_limits[item_name] = value
+        return true
+      end
     end
   end
   return false
@@ -482,6 +486,13 @@ end
 function M.register_tank_entity(entity, config)
   if global.mod.tanks[entity.unit_number] ~= nil then
     return
+  end
+  if config == nil then
+    config = {
+      type = "give",
+      limit = 0,
+      no_limit = true,
+     }
   end
 
   Queue.push(global.mod.scan_queue, entity.unit_number)

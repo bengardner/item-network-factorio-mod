@@ -158,7 +158,7 @@ function NetLimits:refresh()
     total_count = total_count + item.count
   end
 
-  self.elems.title.caption = string.format("Network Shortages - %s types, %s total", total_items, total_count)
+  self.elems.title.caption = string.format("Network Shortages - %.0f types, %.0f total", total_items, total_count)
 end
 
 return M

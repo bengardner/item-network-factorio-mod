@@ -268,7 +268,7 @@ function M.on_entity_settings_pasted(event)
   if dest.name == "network-chest" then
     if source.name == "network-chest" then
       GlobalState.copy_chest_requests(source.unit_number, dest.unit_number)
-    else
+    elseif source.type == "assembling-machine" then
       local recipe = source.get_recipe()
       if recipe ~= nil then
         local requests = {}
@@ -287,6 +287,34 @@ function M.on_entity_settings_pasted(event)
           end
         end
         GlobalState.set_chest_requests(dest.unit_number, requests)
+      end
+    elseif source.type == "container" then
+      -- Turn filter slots into requests, if any. Works for 'se-rocket-launch-pad'
+      local inv = source.get_output_inventory()
+      if inv.is_filtered() then
+        -- clog("SOURCE: %s t=%s inv slots=%s filt=%s", source.name, source.type, #inv, inv.is_filtered())
+        local requests = {}
+        local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
+        for idx=1,#inv do
+          local ff = inv.get_filter(idx)
+          if ff ~= nil then
+            local prot = game.item_prototypes[ff]
+            if prot ~= nil then
+              local stack_size = prot.stack_size
+              local buffer = math.min(buffer_size, stack_size)
+              table.insert(requests, {
+                type = "take",
+                item = ff,
+                buffer = buffer,
+                limit = 0,
+              })
+              -- clog(" - [%s] %s", idx, ff, serpent.line(requests[#requests]))
+            end
+          end
+        end
+        if next(requests) ~= nil then
+          GlobalState.set_chest_requests(dest.unit_number, requests)
+        end
       end
     end
 

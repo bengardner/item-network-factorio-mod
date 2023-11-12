@@ -1040,11 +1040,12 @@ local function update_tank_entity(unit_number, info)
   return update_tank(info)
 end
 
-local function update_entity(unit_number)
+local function update_entity(unit_number, priority)
   local info
   info = GlobalState.get_chest_info(unit_number)
   if info ~= nil then
-    return update_chest_entity(unit_number, info)
+    local status = update_chest_entity(unit_number, info)
+    if info.
   end
 
   info = GlobalState.get_tank_info(unit_number)
@@ -1062,7 +1063,8 @@ local function update_entity(unit_number)
     return M.vehicle_update_entity(entity)
   end
 
-  return GlobalState.UPDATE_STATUS.INVALID
+  -- unknown/invalid unit_number
+  return nil
 end
 
 function M.update_queue()

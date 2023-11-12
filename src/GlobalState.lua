@@ -19,18 +19,50 @@ function M.setup()
   M.inner_setup()
 end
 
+--[[
+Service Queue Revamp.
+
+There is an array of queues.
+The current queue is consumed until empty. Same 20-ish entities per tick.
+Each queue is assigned a minimum amount of ticks that it occupies. (20 ?)
+When a queue is empty, game.tick is compared against the deadline. If passed, then
+the active queue index is incremented (and wrapped) and the deadline is reset.
+
+Entities are added to the service queue via a unit_number and priority.
+The priority selects the relative queue to insert.
+ 0 = active + 1
+ 1 = active + 2, etc
+
+The priority changes based on the type and whether anything was transferred.
+
+ - Network Bulk Provider (empties everything from the chest)
+   * always max priority (longest time between services)
+ - Network Bulk Requester (one item, grabs as much as possible)
+   * always max priority (longest time between services)
+ - Network Chest
+   * priority goes down by 1 when serviced
+   * priority goes up by 1 when not serviced
+ - Network Tank
+   * priority goes down by 1 when serviced
+   * priority goes up by 1 when not serviced
+ - Vechicles
+   * Always max priority
+ - Logistics
+  * Always max priority
+]]
+
 function M.inner_setup()
   if global.mod == nil then
     global.mod = {
       rand = game.create_random_generator(),
       chests = {},
-      scan_queue = Queue.new(),
       items = {},
     }
   end
 
-  if global.mod.scan_queue_inactive == nil then
-    global.mod.scan_queue_inactive = Queue.new()
+  if global.mod.scan_queues == nil then
+    M.reset_queues()
+    global.mod.entity_priority = {} -- key=unum, val=priority
   end
 
   M.remove_old_ui()
@@ -39,7 +71,7 @@ function M.inner_setup()
   end
 
   if global.mod.network_chest_has_been_placed == nil then
-    global.mod.network_chest_has_been_placed = (global.mod.scan_queue.size + global.mod.scan_queue_inactive.size) > 0
+    global.mod.network_chest_has_been_placed = true -- (global.mod.scan_queue.size + global.mod.scan_queue_inactive.size) > 0
   end
 
   if global.mod.fluids == nil then
@@ -116,19 +148,25 @@ function M.inner_setup()
 end
 
 function M.reset_queues()
-  global.mod.scan_queue = Queue.new()
-  global.mod.scan_queue_inactive = Queue.new()
+  global.mod.scan_deadline = 0 -- keep doing nothing until past this tick
+  global.mod.scan_index = 1 -- working on the queue in this index
+
+  global.mod.scan_queues = {} -- list of queues to process
+  for idx = 1, constants.QUEUE_COUNT do
+    global.mod.scan_queues[idx] = Queue.new()
+  end
+
   for unum, _ in pairs(global.mod.chests) do
-    Queue.push(global.mod.scan_queue, unum)
+    M.queue_insert(unum, 1)
   end
   for unum, _ in pairs(global.mod.tanks) do
-    Queue.push(global.mod.scan_queue, unum)
+    M.queue_insert(unum, 2)
   end
   for unum, _ in pairs(global.mod.vehicles) do
-    Queue.push(global.mod.scan_queue, unum)
+    M.queue_insert(unum, 3)
   end
   for unum, _ in pairs(global.mod.logistic) do
-    Queue.push(global.mod.scan_queue, unum)
+    M.queue_insert(unum, 4)
   end
 end
 
@@ -635,10 +673,11 @@ function M.get_ui_state(player_index)
 end
 
 M.UPDATE_STATUS = {
-  INVALID = 0,
-  UPDATED = 1,
-  NOT_UPDATED = 2,
-  ALREADY_UPDATED = 3,
+  INVALID = 0,     -- causes the entity to be removed
+  UPDATED = -1,    -- entity needed service
+  NOT_UPDATED = 1, -- entity did not need service
+  BULK = 1,        -- bulk tranfser
+  ALREADY_UPDATED = 3, -- not used
 }
 
 function M.update_queue(update_entity)
@@ -826,7 +865,49 @@ function M.update_queue_multi(update_entity)
   --Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
 end
 
-M.update_queue = M.update_queue_dual
+function M.queue_insert(unit_number, priority)
+  -- clamp priority to 0 .. QUEUE_COUNT-1
+  priority = math.max(0, math.min(priority, constants.QUEUE_COUNT - 1))
+  global.mod.entity_priority[unit_number] = priority
+
+  -- q_idx is where to put it, Priority 0 => scan_index + 1
+  -- scan_index is 1-based, so it would be scan_index-1+1+priority
+  local q_idx = 1 + (global.mod.scan_index + priority) % constants.QUEUE_COUNT
+  local q = globals.mod.scan_queues[q_idx]
+  Queue.push(q, unit_number)
+end
+
+function M.update_queue_lists(update_entity)
+  local MAX_ENTITIES_TO_UPDATE = settings.global
+    ["item-network-number-of-entities-per-tick"]
+    .value
+
+  local qs = global.mod.scan_queues
+  local q_idx = global.mod.scan_index
+  if q_idx < 1 or q_idx > #qs then
+    q_idx = 1
+  end
+  local q = qs[q_idx]
+
+  for _ = 1, MAX_ENTITIES_TO_UPDATE do
+    local unit_number = Queue.pop(q)
+    if unit_number == nil then
+      -- nothing to process in this queue. step to the next one if past the deadline
+      if game.tick > global.mod.scan_deadline then
+        global.mod.scan_deadline = game.tick + constants.QUEUE_TICKS
+        global.mod.scan_index = q_idx + 1
+      end
+      return
+    end
+
+    local pri = update_entity(unit_number, global.mod.entity_priority[unit_number] or 0)
+    if pri ~= nil then
+      M.queue_insert(unit_number, pri)
+    end
+  end
+end
+
+M.update_queue = M.update_queue_lists
 
 function M.log_entity(title, entity)
   if entity ~= nil then

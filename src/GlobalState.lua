@@ -24,7 +24,7 @@ Service Queue Revamp.
 
 There is an array of queues.
 The current queue is consumed until empty. Same 20-ish entities per tick.
-Each queue is assigned a minimum amount of ticks that it occupies. (20 ?)
+Each queue is assigned a minimum amount of ticks that it occupies. (20 ticks?)
 When a queue is empty, game.tick is compared against the deadline. If passed, then
 the active queue index is incremented (and wrapped) and the deadline is reset.
 
@@ -32,23 +32,38 @@ Entities are added to the service queue via a unit_number and priority.
 The priority selects the relative queue to insert.
  0 = active + 1
  1 = active + 2, etc
+The max priority is the number of queues - 1.
+Smaller priority values are serviced sooner. (0=highest, NUM_QUEUES-1=lowest)
 
 The priority changes based on the type and whether anything was transferred.
+Everything starts at priotirty 0 when created/added.
 
- - Network Bulk Provider (empties everything from the chest)
-   * always max priority (longest time between services)
- - Network Bulk Requester (one item, grabs as much as possible)
-   * always max priority (longest time between services)
- - Network Chest
-   * priority goes down by 1 when serviced
-   * priority goes up by 1 when not serviced
- - Network Tank
-   * priority goes down by 1 when serviced
-   * priority goes up by 1 when not serviced
- - Vechicles
-   * Always max priority
- - Logistics
-  * Always max priority
+  - Network Bulk Provider (empties everything from the chest)
+    * always lowest priority, empties everything
+
+  - Network Bulk Requester (one item, grabs as much as possible, not yet implemented)
+    * always lowest priority, fills entire chest (set RED stuff to limit)
+    * NOTE: based on the logistic storage chest, where the filter sets the request. Coverage disabled.
+
+  - Network Chest
+    * priority goes up by 1 when something was added AND any request was empty
+      * the individual request size is altered only if at highest priority (0 or 1)
+    * priority goes down by 1 when nothing was added (wait longer next cycle)
+    * this should auto-tune
+
+  - Network Tank (send/provide)
+    * If the tank was over 90% full AND we send the whole tank, then the priority goes up by 1 (more often)
+    * If the tank was < 10% full OR we can't send the whole tanke, then the priority does down by 1 (less often)
+
+  - Network Tank (take/request)
+    * priority goes up by 1 if the tank is < 10% full when serviced and the tank is full when done
+    * priority goes down by 1 if the tank is > 90% full OR we add less than 10%
+
+  - Vechicles
+    * Always lowest priority (vehicles take a while to use up stuff)
+
+  - Logistics
+    * Always lowest priority (no rush -- let the robots scurry)
 ]]
 
 function M.inner_setup()
@@ -60,9 +75,9 @@ function M.inner_setup()
     }
   end
 
-  if global.mod.scan_queues == nil then
-    M.reset_queues()
+  if global.mod.scan_queues == nil or true then
     global.mod.entity_priority = {} -- key=unum, val=priority
+    M.reset_queues()
   end
 
   M.remove_old_ui()
@@ -156,17 +171,25 @@ function M.reset_queues()
     global.mod.scan_queues[idx] = Queue.new()
   end
 
-  for unum, _ in pairs(global.mod.chests) do
-    M.queue_insert(unum, 1)
+  if global.mod.chests ~= nil then
+    for unum, _ in pairs(global.mod.chests) do
+      M.queue_insert(unum, 1)
+    end
   end
-  for unum, _ in pairs(global.mod.tanks) do
-    M.queue_insert(unum, 2)
+  if global.mod.tanks ~= nil then
+    for unum, _ in pairs(global.mod.tanks) do
+      M.queue_insert(unum, 2)
+    end
   end
-  for unum, _ in pairs(global.mod.vehicles) do
-    M.queue_insert(unum, 3)
+  if global.mod.vehicles ~= nil then
+    for unum, _ in pairs(global.mod.vehicles) do
+      M.queue_insert(unum, 3)
+    end
   end
-  for unum, _ in pairs(global.mod.logistic) do
-    M.queue_insert(unum, 4)
+  if global.mod.logistic ~= nil then
+    for unum, _ in pairs(global.mod.logistic) do
+      M.queue_insert(unum, 4)
+    end
   end
 end
 
@@ -429,7 +452,8 @@ end
 function M.logistic_add_entity(entity)
   if global.mod.logistic[entity.unit_number] == nil then
     global.mod.logistic[entity.unit_number] = entity
-    Queue.push(global.mod.scan_queue, entity.unit_number)
+    M.queue_insert(entity.unit_number, 0)
+    --Queue.push(global.mod.scan_queue, entity.unit_number)
   end
 end
 
@@ -462,7 +486,8 @@ end
 function M.vehicle_add_entity(entity)
   if global.mod.vehicles[entity.unit_number] == nil then
     global.mod.vehicles[entity.unit_number] = entity
-    Queue.push(global.mod.scan_queue, entity.unit_number)
+    M.queue_insert(entity.unit_number, 0)
+    --Queue.push(global.mod.scan_queue, entity.unit_number)
   end
 end
 
@@ -491,7 +516,8 @@ function M.register_chest_entity(entity, requests)
     return
   end
 
-  Queue.push(global.mod.scan_queue, entity.unit_number)
+  M.queue_insert(entity.unit_number, 0)
+  --Queue.push(global.mod.scan_queue, entity.unit_number)
   global.mod.chests[entity.unit_number] = {
     entity = entity,
     requests = requests,
@@ -533,7 +559,8 @@ function M.register_tank_entity(entity, config)
      }
   end
 
-  Queue.push(global.mod.scan_queue, entity.unit_number)
+  M.queue_insert(entity.unit_number, 0)
+  --Queue.push(global.mod.scan_queue, entity.unit_number)
   global.mod.tanks[entity.unit_number] = {
     entity = entity,
     config = config,
@@ -673,11 +700,16 @@ function M.get_ui_state(player_index)
 end
 
 M.UPDATE_STATUS = {
-  INVALID = 0,     -- causes the entity to be removed
-  UPDATED = -1,    -- entity needed service
-  NOT_UPDATED = 1, -- entity did not need service
-  BULK = 1,        -- bulk tranfser
-  ALREADY_UPDATED = 3, -- not used
+  INVALID        = nil, -- causes the entity to be removed
+  UPDATE_PRI_INC  = -1, -- entity needed service
+  UPDATE_PRI_SAME = 0,  -- entity needed service
+  UPDATE_PRI_DEC  = 1,  -- entity did not need service
+  UPDATE_PRI_MAX  = constants.QUEUE_COUNT - 1,
+  -- aliases
+  UPDATE_BULK     = constants.QUEUE_COUNT - 1,
+  UPDATE_LOGISTIC = constants.QUEUE_COUNT - 1,
+  UPDATE_VEHICLE  = constants.QUEUE_COUNT - 1,
+  NOT_UPDATED     = constants.QUEUE_COUNT - 1,
 }
 
 function M.update_queue(update_entity)
@@ -865,18 +897,33 @@ function M.update_queue_multi(update_entity)
   --Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
 end
 
+--[[
+  Adds an entity by unit_number and priority.
+  0 is the highest priority and will put the entity in the next queue slot.
+  The largest value (lowest priority) is (constants.QUEUE_COUNT - 1).
+  That will put the entity in the previous queue slot.
+]]
 function M.queue_insert(unit_number, priority)
-  -- clamp priority to 0 .. QUEUE_COUNT-1
-  priority = math.max(0, math.min(priority, constants.QUEUE_COUNT - 1))
+  -- clamp priority to 0 .. QUEUE_COUNT-2
+  priority = math.max(0, math.min(priority, constants.QUEUE_COUNT - 2))
+  -- save the priority for next time
   global.mod.entity_priority[unit_number] = priority
 
   -- q_idx is where to put it, Priority 0 => scan_index + 1
-  -- scan_index is 1-based, so it would be scan_index-1+1+priority
+  -- scan_index is 1-based, so we subtract 1 and then add 1 (scan_index - 1 + 1 + priority)
   local q_idx = 1 + (global.mod.scan_index + priority) % constants.QUEUE_COUNT
-  local q = globals.mod.scan_queues[q_idx]
-  Queue.push(q, unit_number)
+  Queue.push(global.mod.scan_queues[q_idx], unit_number)
+
+  --print(string.format("[%s] ADD  q %s unum %s si=%s p=%s qx=%s", game.tick, q_idx, unit_number, global.mod.scan_index, priority, constants.QUEUE_COUNT))
 end
 
+--[[
+This processes up to "item-network-number-of-entities-per-tick" entities from the active queue.
+If the current queue is empty and the deadline has passed then we step to the next queue, which
+is processed on the next tick.
+
+The function is passed in to avoid circular dependencies.
+]]
 function M.update_queue_lists(update_entity)
   local MAX_ENTITIES_TO_UPDATE = settings.global
     ["item-network-number-of-entities-per-tick"]
@@ -893,16 +940,23 @@ function M.update_queue_lists(update_entity)
     local unit_number = Queue.pop(q)
     if unit_number == nil then
       -- nothing to process in this queue. step to the next one if past the deadline
-      if game.tick > global.mod.scan_deadline then
+      if game.tick >= (global.mod.scan_deadline or 0) then
         global.mod.scan_deadline = game.tick + constants.QUEUE_TICKS
         global.mod.scan_index = q_idx + 1
+        --print(string.format("[%s] NEXT scan_idx=%s", game.tick, global.mod.scan_index))
       end
       return
     end
+    --print(string.format("[%s] PROC q %s unum %s", game.tick, q_idx, unit_number))
 
-    local pri = update_entity(unit_number, global.mod.entity_priority[unit_number] or 0)
-    if pri ~= nil then
-      M.queue_insert(unit_number, pri)
+    -- the UPDATE_STATUS are actually relative priorities.
+    local old_pri = global.mod.entity_priority[unit_number] or 0
+    local pri_adj = update_entity(unit_number, old_pri)
+    -- nil means entity is invalid.
+    if pri_adj ~= nil then
+      M.queue_insert(unit_number, old_pri + pri_adj)
+    else
+      clog("Dropped: G unum %s", unit_number)
     end
   end
 end

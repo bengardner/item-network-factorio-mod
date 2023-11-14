@@ -5,6 +5,7 @@ local Gui = require('__stdlib__/stdlib/event/gui')
 local UiCharacterInventory = require "src.UiCharacterInventory"
 local UiNetworkItems = require "src.UiNetworkItems"
 local UiChestInventory = require "src.UiChestInventory"
+local clog = require("src.log_console").log
 
 local M = {}
 
@@ -278,6 +279,25 @@ Event.register(defines.events.on_gui_closed, M.on_gui_closed, Event.Filters.gui,
 -- hotkey handler
 Event.on_event("in_open_test_view", function (event)
     M.create_gui(event.player_index)
+  end)
+
+
+Event.on_event("debug-network-item", function (event)
+    --[[ player_index, input_name, cursor_position, ]]
+    local player = game.get_player(event.player_index)
+    if player ~= nil and player.selected then
+      local ent = player.selected
+      local unum = ent.unit_number
+      clog("EVENT %s ent=[%s] %s %s", serpent.line(event), unum, ent.name, ent.type)
+      local info = GlobalState.get_chest_info(unum)
+      if info ~= nil then
+        clog(" - chest: %s", serpent.line(info))
+      end
+      info = GlobalState.get_tank_info(unum)
+      if info ~= nil then
+        clog(" - tank: %s", serpent.line(info))
+      end
+    end
   end)
 
 return M

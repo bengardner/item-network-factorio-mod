@@ -7,8 +7,8 @@ local NetworkTankGui = require "src.NetworkTankGui"
 local Event = require('__stdlib__/stdlib/event/event')
 local util = require("util") -- from core/lualib
 local clog = require("src.log_console").log
-local tables_have_same_keys = require("src.tables_have_same_keys")
-  .tables_have_same_keys
+local tables_have_same_keys = require("src.tables_have_same_keys").tables_have_same_keys
+local constants             = require("constants")
 
 local M = {}
 
@@ -370,8 +370,7 @@ end
 
 -- fulfill requests. entity must have request_slot_count and get_request_slot()
 -- useful for vehicles (spidertron) and logistic containers
-function M.inventory_handle_requests(entity, inv, old_status)
-  local status = old_status or GlobalState.UPDATE_STATUS.NOT_UPDATED
+function M.inventory_handle_requests(entity, inv)
   if entity ~= nil and inv ~= nil and entity.request_slot_count > 0 then
     local contents = inv.get_contents()
 
@@ -386,7 +385,6 @@ function M.inventory_handle_requests(entity, inv, old_status)
           local n_inserted = inv.insert { name = req.name, count = n_transfer }
           if n_inserted > 0 then
             GlobalState.set_item_count(req.name, network_count - n_inserted)
-            status = GlobalState.UPDATE_STATUS.UPDATED
           end
         end
         if n_transfer < n_wanted then
@@ -395,7 +393,9 @@ function M.inventory_handle_requests(entity, inv, old_status)
       end
     end
   end
-  return status
+
+  -- logsitics are always at the back of the list
+  return GlobalState.UPDATE_STATUS.UPDATE_LOGISTIC
 end
 
 function M.update_player(player, enable_logistics)
@@ -467,26 +467,20 @@ function M.updatePlayers()
   end
 end
 
-function M.update_vehicle(entity, inv_trash, inv_trunk)
-  -- move trash to the item network
-  local status = GlobalState.put_inventory_in_network(inv_trash)
-
-  return M.inventory_handle_requests(entity, inv_trunk, status)
-end
-
-function M.vehicle_update_entity(entity)
+function M.update_entity_vehicle(entity)
   -- only 1 logistic vehicle right now
   if entity.name ~= "spidertron" then
     return GlobalState.UPDATE_STATUS.INVALID
   end
 
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
   if entity.vehicle_logistic_requests_enabled then
-    status = M.update_vehicle(entity,
-      entity.get_inventory(defines.inventory.spider_trash),
-      entity.get_inventory(defines.inventory.spider_trunk))
+    local inv_trash = entity.get_inventory(defines.inventory.spider_trash)
+    local inv_trunk = entity.get_inventory(defines.inventory.spider_trunk)
+
+    GlobalState.put_inventory_in_network(inv_trash)
+    M.inventory_handle_requests(entity, inv_trunk)
   end
-  return status
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
 function M.is_request_valid(request)
@@ -592,7 +586,7 @@ If anything can't be forwarded, the chest is locked (set bar=1) and the leftover
 This does not call inv.clear(), but rather pulls items using inv.remove().
 ]]
 local function update_network_chest_unconfigured_locked(info, inv, contents)
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+  local status = GlobalState.UPDATE_STATUS.UPDATE_BULK
 
   -- NOTE: We do not clear the inventory or filters. There is one slot per item.
 
@@ -634,7 +628,7 @@ local function update_network_chest_unconfigured_locked(info, inv, contents)
     inv_unconfigured_lock(inv, leftovers, info.recent_items)
   end
 
-  return GlobalState.UPDATE_STATUS.UPDATED
+  return status
 end
 
 -- get the "buffer" value for this item
@@ -718,12 +712,15 @@ end
 --[[
   Common bit for a configured chest.
   Push items to the net, then handle "take" requests
+
+  returns GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME or GlobalState.UPDATE_STATUS.UPDATE_PRI_INC or GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
 ]]
 local function update_network_chest_configured_common(info, inv, contents)
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+  local status = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
   local locked_items = {} -- key=item, val=true
 
   -- pass 1: Send excessive items; note which sends fail in "locked" table
+  -- does not affect the priority
   for item, n_have in pairs(contents) do
     local n_want, r_type = get_request_buffer(info.requests, item)
 
@@ -748,6 +745,7 @@ local function update_network_chest_configured_common(info, inv, contents)
   end
 
   -- pass 2: satisfy requests (pull into contents)
+  local added_some = false
   for _, req in pairs(info.requests) do
     if req.type == "take" then
       local n_have = contents[req.item] or 0
@@ -760,15 +758,19 @@ local function update_network_chest_configured_common(info, inv, contents)
           -- it may not fit in the chest due to other reasons
           n_transfer = inv.insert({name=req.item, count=n_transfer})
           if n_transfer > 0 then
-            status = GlobalState.UPDATE_STATUS.UPDATED
+            added_some = true
             contents[req.item] = n_have + n_transfer
             GlobalState.set_item_count(req.item, n_innet - n_transfer)
 
-            --[[ If we filled the entire buffer AND there is enough in the net for another buffer, then
-            we are probably not requesting enough. Up the buffer size by 1.
+            --[[ If we filled the entire buffer, then we may not be requesting often enough.
+            If there is enough in the net for another 4*buffer, then we are probably not
+            requesting enough. Up the buffer size by 1.
             ]]
-            if n_transfer == req.buffer and n_innet > n_transfer * 4 then
-              req.buffer = req.buffer + 1
+            if n_transfer == req.buffer then
+              status = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+              if n_innet > n_transfer * 4 then
+                req.buffer = req.buffer + 1
+              end
             end
           end
         else
@@ -776,6 +778,11 @@ local function update_network_chest_configured_common(info, inv, contents)
         end
       end
     end
+  end
+
+  -- update less frequently if we didn't request anything
+  if added_some == false then
+    status = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
   end
 
   return status, locked_items
@@ -797,7 +804,8 @@ local function update_network_chest_configured_unlocked(info, inv, contents)
 
   inv_configured_lock(info, inv, contents)
 
-  return GlobalState.UPDATE_STATUS.UPDATED
+  -- just locked, so update less often
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
 end
 
 --[[
@@ -825,7 +833,7 @@ local function update_network_chest_configured_locked(info, inv, contents)
     inv_configured_lock(info, inv, contents)
   end
 
-  return GlobalState.UPDATE_STATUS.UPDATED
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
 end
 
 -- this is the handler for the "old" network-chest
@@ -840,12 +848,14 @@ local function update_network_chest(info)
 
   local is_locked = (inv.get_bar() < #inv)
   if #info.requests == 0 then
+    -- fully automatic provider
     if is_locked then
-      return update_network_chest_unconfigured_locked(info, inv, contents)
+      update_network_chest_unconfigured_locked(info, inv, contents)
     else
-      return update_network_chest_unconfigured_unlocked(info, inv, contents)
+      update_network_chest_unconfigured_unlocked(info, inv, contents)
     end
-  else
+    return GlobalState.UPDATE_STATUS.UPDATE_BULK
+  else -- configured
     if is_locked then
       return update_network_chest_configured_locked(info, inv, contents)
     else
@@ -883,8 +893,10 @@ local function update_network_chest_provider(info)
 end
 
 --[[
-This is the handler for the "new" provider-only chest.
-Sends everything to the network. No bars, filter, etc.
+This is the handler for the "new" requester-only chest.
+Fills the chest with one item (filter slot 1), respecting the bar.
+
+NOT USED RIGHT NOW
 ]]
 local function update_network_chest_requester(info)
   local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
@@ -925,7 +937,7 @@ local function update_network_chest_requester(info)
 end
 
 local function update_tank(info)
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
+  local status = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
   local type = info.config.type
   local limit = info.config.limit or 5000
   local buffer = info.config.buffer or 1000
@@ -934,6 +946,7 @@ local function update_tank(info)
   local no_limit = (info.config.no_limit == true)
 
   if type == "give" then
+    -- the network tank only has one fluidbox...
     local fluidbox = info.entity.fluidbox
     for idx = 1, #fluidbox do
       local fluid_instance = fluidbox[idx]
@@ -951,7 +964,6 @@ local function update_tank(info)
         local n_take = math.max(0, math.max(limit, gl_limit) - current_count)
         local n_transfer = math.floor(math.min(n_give, n_take))
         if n_transfer > 0 then
-          status = GlobalState.UPDATE_STATUS.UPDATED
           GlobalState.increment_fluid_count(fluid_instance.name,
             fluid_instance.temperature, n_transfer)
           local removed = info.entity.remove_fluid({
@@ -960,9 +972,18 @@ local function update_tank(info)
             amount = n_transfer,
           })
           assert(removed == n_transfer)
+
+          if n_transfer >= constants.MAX_TANK_SIZE * 0.9 then
+            -- We gave a full tank's worth, so maybe we should service more often
+            status = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+          elseif n_transfer <= constants.MAX_TANK_SIZE * 0.1 then
+            -- We gave less than 10%, so we could check less often
+            status = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+          end
         end
       end
     end
+
   else
     local fluidbox = info.entity.fluidbox
     local tank_fluid = nil
@@ -979,16 +1000,17 @@ local function update_tank(info)
       end
     end
 
+    -- only touch if there is a matching fluid
     if n_fluid_boxes == 0 or (n_fluid_boxes == 1 and tank_fluid == fluid and tank_temp == temp) then
       local network_count = GlobalState.get_fluid_count(
         fluid,
         temp
       )
+      -- how much we the network can give us, less the limit
       local n_give = math.max(0, network_count - limit)
-      local n_take = math.max(0, buffer - tank_count)
+      local n_take = math.max(0, buffer - tank_count) -- how much space we have in the tank
       local n_transfer = math.floor(math.min(n_give, n_take))
       if n_transfer > 0 then
-        status = GlobalState.UPDATE_STATUS.UPDATED
         local added = info.entity.insert_fluid({
           name = fluid,
           amount = n_transfer,
@@ -996,6 +1018,12 @@ local function update_tank(info)
         })
         if added > 0 then
           GlobalState.increment_fluid_count(fluid, temp, -added)
+          if added == n_take and tank_count < (0.1 * buffer) then
+            -- we filled the tank and the tank was less than 10% full
+            status = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+          elseif tank_count < (buffer * 0.9) or added < (buffer * 0.1) then
+            status = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+          end
         end
       end
       if n_take > n_give then
@@ -1008,10 +1036,10 @@ local function update_tank(info)
   return status
 end
 
-local function update_chest_entity(unit_number, info)
+local function update_entity_chest(unit_number, info)
   local entity = info.entity
   if not entity.valid then
-    return GlobalState.UPDATE_STATUS.INVALID
+    return GlobalState.UPDATE_STATUS.INVALID -- nil
   end
 
   if entity.to_be_deconstructed() then
@@ -1020,50 +1048,65 @@ local function update_chest_entity(unit_number, info)
 
   if entity.name == "network-chest" then
     return update_network_chest(info)
+
   elseif entity.name == "network-chest-provider" then
-    return update_network_chest_provider(info)
+    update_network_chest_provider(info)
+    return GlobalState.UPDATE_STATUS.UPDATE_BULK
+
   elseif entity.name == "network-chest-requester" then
-    return update_network_chest_requester(info)
+    update_network_chest_requester(info)
+    return GlobalState.UPDATE_STATUS.UPDATE_BULK
   end
 end
 
-local function update_tank_entity(unit_number, info)
+local function update_entity_tank(unit_number, info)
   local entity = info.entity
   if not entity.valid then
+    clog("tank entity %s not valid", unit_number)
     return GlobalState.UPDATE_STATUS.INVALID
   end
 
+  -- 'to_be_deconstructed()'' may be temporary
   if info.config == nil or entity.to_be_deconstructed() then
-    return GlobalState.UPDATE_STATUS.NOT_UPDATED
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
 
   return update_tank(info)
 end
 
+--[[
+Updates one entity that we track.
+
+@unit_number is the entity unit number. It may no longer be valid.
+@priority is current priority, which may be adjusted.
+@returns the new priority
+]]
 local function update_entity(unit_number, priority)
   local info
   info = GlobalState.get_chest_info(unit_number)
   if info ~= nil then
-    local status = update_chest_entity(unit_number, info)
-    if info.
+    info.service_tick = game.tick
+    return update_entity_chest(unit_number, info, priority)
   end
 
   info = GlobalState.get_tank_info(unit_number)
   if info ~= nil then
-    return update_tank_entity(unit_number, info)
+    info.service_tick = game.tick
+    return update_entity_tank(unit_number, info, priority)
   end
 
   local entity = GlobalState.get_logistic_entity(unit_number)
   if entity ~= nil then
-    return M.logistic_update_entity(entity)
+    return M.update_entity_logistic(entity)
   end
 
   entity = GlobalState.get_vehicle_entity(unit_number)
   if entity ~= nil then
-    return M.vehicle_update_entity(entity)
+    return M.update_entity_vehicle(entity)
   end
 
   -- unknown/invalid unit_number
+  clog("Dropped: unum %s", unit_number)
   return nil
 end
 
@@ -1071,24 +1114,17 @@ function M.update_queue()
   GlobalState.update_queue(update_entity)
 end
 
-function M.logistic_update_entity(entity)
-  if not settings.global["item-network-enable-logistic-chest"].value then
-    return GlobalState.UPDATE_STATUS.NOT_UPDATED
-  end
-
+function M.update_entity_logistic(entity)
   -- sanity check
   if not entity.valid then
-    return GlobalState.UPDATE_STATUS.INVALID
+    return GlobalState.UPDATE_STATUS.INVALID -- nil
   end
 
-  -- don't add stuff to a doomed chest
-  if entity.to_be_deconstructed() then
-    return GlobalState.UPDATE_STATUS.NOT_UPDATED
+  if settings.global["item-network-enable-logistic-chest"].value and not entity.to_be_deconstructed() then
+    M.inventory_handle_requests(entity, entity.get_output_inventory())
   end
 
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
-
-  return M.inventory_handle_requests(entity, entity.get_output_inventory(), status)
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
 function M.onTick()

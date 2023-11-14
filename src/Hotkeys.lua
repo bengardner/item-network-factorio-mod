@@ -22,6 +22,11 @@ M.hotkeys = {
     name = "in_open_test_view",
     key_sequence = "CONTROL + SHIFT + H",
   },
+  {
+    type = "custom-input",
+    name = "debug-network-item",
+    key_sequence = "SHIFT + G",
+  },
 }
 
 return M

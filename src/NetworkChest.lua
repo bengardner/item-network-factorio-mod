@@ -730,7 +730,7 @@ local function update_network_chest_configured_common(info, inv, contents)
       local n_free = GlobalState.get_insert_count(item)
       local n_transfer = math.min(n_extra, n_free)
       if n_transfer > 0 then
-        status = GlobalState.UPDATE_STATUS.UPDATED
+        -- status = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
         inv.remove({name=item, count=n_transfer})
         GlobalState.increment_item_count(item, n_transfer)
         info.recent_items[item] = game.tick
@@ -1056,7 +1056,10 @@ local function update_entity_chest(unit_number, info)
   elseif entity.name == "network-chest-requester" then
     update_network_chest_requester(info)
     return GlobalState.UPDATE_STATUS.UPDATE_BULK
+  else
+    clog("What is this chest? %s", entity.name)
   end
+  return GlobalState.UPDATE_STATUS.NOT_UPDATED
 end
 
 local function update_entity_tank(unit_number, info)
@@ -1086,27 +1089,43 @@ local function update_entity(unit_number, priority)
   info = GlobalState.get_chest_info(unit_number)
   if info ~= nil then
     info.service_tick = game.tick
-    return update_entity_chest(unit_number, info, priority)
+    local retval = update_entity_chest(unit_number, info)
+    if retval == nil then
+      clog("chest drop: %s", serpent.line(info))
+    end
+    return retval
   end
 
   info = GlobalState.get_tank_info(unit_number)
   if info ~= nil then
     info.service_tick = game.tick
-    return update_entity_tank(unit_number, info, priority)
+    local retval = update_entity_tank(unit_number, info)
+    if retval == nil then
+      clog("tank drop: %s", serpent.line(info))
+    end
+    return retval
   end
 
   local entity = GlobalState.get_logistic_entity(unit_number)
   if entity ~= nil then
-    return M.update_entity_logistic(entity)
+    local retval = M.update_entity_logistic(entity)
+    if retval == nil then
+      clog("logistic drop: %s", serpent.line(info))
+    end
+    return retval
   end
 
   entity = GlobalState.get_vehicle_entity(unit_number)
   if entity ~= nil then
-    return M.update_entity_vehicle(entity)
+    local retval = M.update_entity_vehicle(entity)
+    if retval == nil then
+      clog("vehicle drop: %s", serpent.line(info))
+    end
+    return retval
   end
 
   -- unknown/invalid unit_number
-  clog("Dropped: unum %s", unit_number)
+  clog("Dropped: unknown unum %s", unit_number)
   return nil
 end
 

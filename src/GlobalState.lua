@@ -76,7 +76,6 @@ function M.inner_setup()
   end
 
   if global.mod.scan_queues == nil or true then
-    global.mod.entity_priority = {} -- key=unum, val=priority
     M.reset_queues()
   end
 
@@ -168,7 +167,8 @@ function M.reset_queues()
 
   global.mod.scan_queues = {} -- list of queues to process
   for idx = 1, constants.QUEUE_COUNT do
-    global.mod.scan_queues[idx] = Queue.new()
+    -- key=unit_nubmer, val=priority
+    global.mod.scan_queues[idx] = {}
   end
 
   if global.mod.chests ~= nil then
@@ -904,15 +904,13 @@ end
   That will put the entity in the previous queue slot.
 ]]
 function M.queue_insert(unit_number, priority)
-  -- clamp priority to 0 .. QUEUE_COUNT-2
+  -- clamp priority to 0..QUEUE_COUNT-2 (inclusive)
   priority = math.max(0, math.min(priority, constants.QUEUE_COUNT - 2))
-  -- save the priority for next time
-  global.mod.entity_priority[unit_number] = priority
 
   -- q_idx is where to put it, Priority 0 => scan_index + 1
   -- scan_index is 1-based, so we subtract 1 and then add 1 (scan_index - 1 + 1 + priority)
   local q_idx = 1 + (global.mod.scan_index + priority) % constants.QUEUE_COUNT
-  Queue.push(global.mod.scan_queues[q_idx], unit_number)
+  global.mod.scan_queues[q_idx][unit_number] = priority
 
   --print(string.format("[%s] ADD  q %s unum %s si=%s p=%s qx=%s", game.tick, q_idx, unit_number, global.mod.scan_index, priority, constants.QUEUE_COUNT))
 end
@@ -930,14 +928,14 @@ function M.update_queue_lists(update_entity)
     .value
 
   local qs = global.mod.scan_queues
-  local q_idx = global.mod.scan_index
+  local q_idx = global.mod.scan_index or 1
   if q_idx < 1 or q_idx > #qs then
     q_idx = 1
   end
   local q = qs[q_idx]
 
   for _ = 1, MAX_ENTITIES_TO_UPDATE do
-    local unit_number = Queue.pop(q)
+    local unit_number, old_pri = next(q)
     if unit_number == nil then
       -- nothing to process in this queue. step to the next one if past the deadline
       if game.tick >= (global.mod.scan_deadline or 0) then
@@ -947,10 +945,10 @@ function M.update_queue_lists(update_entity)
       end
       return
     end
-    --print(string.format("[%s] PROC q %s unum %s", game.tick, q_idx, unit_number))
+    q[unit_number] = nil
+    --print(string.format("[%s] PROC q %s unum=%s pri=%s", game.tick, q_idx, unit_number, old_pri))
 
     -- the UPDATE_STATUS are actually relative priorities.
-    local old_pri = global.mod.entity_priority[unit_number] or 0
     local pri_adj = update_entity(unit_number, old_pri)
     -- nil means entity is invalid.
     if pri_adj ~= nil then

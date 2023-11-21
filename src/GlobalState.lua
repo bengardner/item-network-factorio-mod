@@ -75,7 +75,7 @@ function M.inner_setup()
     }
   end
 
-  if global.mod.scan_queues == nil or true then
+  if global.mod.scan_queues == nil then
     M.reset_queues()
   end
 
@@ -196,7 +196,7 @@ end
 -- scan existing tanks and chests and use the max "give" limit as the item limit
 function M.limit_scan(item)
   local limits = global.mod.item_limits
-  local unlimited = 2000000000 -- "2G"
+  local unlimited = constants.UNLIMITED
 
   for _, info in pairs(global.mod.chests) do
     if info.requests ~= nil then

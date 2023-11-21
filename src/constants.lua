@@ -12,4 +12,7 @@ M.MAX_MISSING_TICKS = 5 * 60
 M.QUEUE_COUNT = 10
 M.QUEUE_TICKS = 10 -- should be like 10
 
+-- has to be small enough to be in the constant combinator
+M.UNLIMITED = 2000000000 -- "2G"
+
 return M

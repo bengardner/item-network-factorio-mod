@@ -4,6 +4,7 @@
 
   Probably should re-do this as a table of item-name => count.
 ]]
+local constants = require "src.constants"
 local M = {}
 
 -- this belonds in a utility file
@@ -16,14 +17,14 @@ end
 
 -- this should be read from a config file
 local default_limits = {
-  ["crude-oil"] = 5000000,
-  ["heavy-oil"] = 5000000,
-  ["light-oil"] = 5000000,
+  ["crude-oil"] = constants.UNLIMITED,
+  ["heavy-oil"] = constants.UNLIMITED,
+  ["light-oil"] = constants.UNLIMITED,
   ["lubricant"] = 50000,
-  ["petroleum-gas"] = 5000000,
-  ["steam"] = 5000000,
+  ["petroleum-gas"] = constants.UNLIMITED,
+  ["steam"] = constants.UNLIMITED,
   ["sulfuric-acid"] = 50000,
-  ["water"] = 5000000,
+  ["water"] = constants.UNLIMITED,
   ["accumulator"] = 100,
   ["advanced-circuit"] = 200,
   ["arithmetic-combinator"] = 50,
@@ -43,13 +44,13 @@ local default_limits = {
   ["burner-mining-drill"] = 20,
   ["centrifuge"] = 20,
   ["chemical-plant"] = 20,
-  ["coal"] = 500000000,
-  ["coin"] = 500000000,
+  ["coal"] = constants.UNLIMITED,
+  ["coin"] = constants.UNLIMITED,
   ["concrete"] = 500,
   ["constant-combinator"] = 50,
   ["construction-robot"] = 100,
   ["copper-cable"] = 5000,
-  ["copper-ore"] = 500000000,
+  ["copper-ore"] = constants.UNLIMITED,
   ["copper-plate"] = 50000,
   ["crude-oil-barrel"] = 50,
   ["decider-combinator"] = 50,
@@ -91,8 +92,8 @@ local default_limits = {
   ["inserter"] = 50,
   ["iron-chest"] = 50,
   ["iron-gear-wheel"] = 5000,
-  ["iron-ore"] = 5000000000,
-  ["iron-plate"] = 10000,
+  ["iron-ore"] = constants.UNLIMITED,
+  ["iron-plate"] = 20000,
   ["iron-stick"] = 10000,
   ["lab"] = 10,
   ["land-mine"] = 100,
@@ -138,7 +139,7 @@ local default_limits = {
   ["refined-hazard-concrete"] = 500,
   ["roboport"] = 10,
   ["rocket-control-unit"] = 50,
-  ["rocket-fuel"] = 5000,
+  ["rocket-fuel"] = 50000,
   ["rocket-part"] = 5000,
   ["rocket-silo"] = 1,
   ["satellite"] = 50,
@@ -157,7 +158,7 @@ local default_limits = {
   ["steel-chest"] = 50,
   ["steel-furnace"] = 200,
   ["steel-plate"] = 5000,
-  ["stone"] = 5000000000,
+  ["stone"] = constants.UNLIMITED,
   ["stone-brick"] = 500,
   ["stone-furnace"] = 100,
   ["stone-wall"] = 500,
@@ -168,19 +169,19 @@ local default_limits = {
   ["train-stop"] = 10,
   ["transport-belt"] = 100,
   ["underground-belt"] = 50,
-  ["uranium-235"] = 5000000,
-  ["uranium-238"] = 5000000,
-  ["uranium-fuel-cell"] = 5000000,
-  ["uranium-ore"] = 5000000,
-  ["used-up-uranium-fuel-cell"] = 5000000,
+  ["uranium-235"] = constants.UNLIMITED,
+  ["uranium-238"] = constants.UNLIMITED,
+  ["uranium-fuel-cell"] = 5,
+  ["uranium-ore"] = constants.UNLIMITED,
+  ["used-up-uranium-fuel-cell"] = constants.UNLIMITED,
   ["water-barrel"] = 500,
-  ["wood"] = 5000000,
+  ["wood"] = constants.UNLIMITED,
   ["wooden-chest"] = 50,
 }
 
 -- return a hopefully sane default to help new players
 function M.get_default_limit(item)
-  -- see if we have if by name
+  -- see if we have addded an entry by name
   local deflim = default_limits[item]
   if deflim ~= nil then
     return deflim
@@ -196,9 +197,9 @@ function M.get_default_limit(item)
   if str_endswith(prot.name, "-remote") then
     -- coverts spidertron remote and a few others
     return 1
-  elseif prot.subgroup.name == "raw-resource" or prot.name == "uranium-238" then
+  elseif prot.subgroup.name == "raw-resource" then
     -- example: iron-ore
-    return 1000000 -- 1 M
+    return constants.UNLIMITED
   elseif prot.subgroup.name == "raw-material" then
     -- example: iron-plate
     return 50000 -- 50 K

@@ -7,7 +7,8 @@ local Event = require('__stdlib__/stdlib/event/event')
 local util = require("util") -- from core/lualib
 local clog = require("src.log_console").log
 local tabutils = require("src.tables_have_same_keys")
-local constants             = require("constants")
+local constants = require("constants")
+local NetworkTankAutoConfig = require("src.NetworkTankAutoConfig")
 
 local M = {}
 
@@ -942,6 +943,15 @@ local function update_network_chest_requester(info)
 end
 
 local function update_tank(info)
+  -- hook in autoconfig
+  if info.config.type == "auto" then
+    local config = NetworkTankAutoConfig.auto_config(info.entity)
+    if config == nil then
+      return GlobalState.UPDATE_STATUS.NOT_UPDATED
+    end
+    info.config = config
+  end
+
   local status = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
   local type = info.config.type
   local limit = info.config.limit or 5000

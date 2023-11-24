@@ -5,6 +5,7 @@ local Event = require('__stdlib__/stdlib/event/event')
 local Gui = require('__stdlib__/stdlib/event/gui')
 local GuiManager = require('src.GuiManager')
 local clog = require("src.log_console").log
+local NetworkTankAutoConfig = require("src.NetworkTankAutoConfig")
 
 -- this is the fake metatable - all functions take an instance created via
 -- network_tank_on_gui_opened() as the first parameter.
@@ -198,7 +199,7 @@ function M.set_default_buffer_and_limit(self)
   local fluid = self.fluid
   local type = self.type
   if type == "give" then
-    M.set_limit(self, Constants.MAX_TANK_SIZE)
+    M.set_limit(self, 0)
   elseif fluid ~= nil and type ~= nil then
     local limit
     if type == "take" then
@@ -244,29 +245,38 @@ function M.get_config_from_network_tank_ui(self)
     end
 
     if buffer > Constants.MAX_TANK_SIZE then
-      return nil
+      buffer = Constants.MAX_TANK_SIZE
     end
 
-    return {
+    local config = {
       type = type,
       fluid = fluid,
       buffer = buffer,
       limit = limit,
       temperature = temperature,
     }
+    if limit == 0 then
+      config.no_limit = true
+    end
+    return config
+
   else
-    if type == nil or limit == nil then
+    if type == nil then
       return nil
     end
 
-    if limit < 0 then
-      return nil
+    if limit == nil or limit < 0 then
+      limit = 0
     end
 
-    return {
+    local config = {
       type = type,
       limit = limit,
     }
+    if limit == 0 then
+      config.no_limit = true
+    end
+    return config
   end
 end
 
@@ -287,161 +297,29 @@ function M.try_to_confirm(self)
   M.reset(self)
 end
 
--------------------------------------------------------------------------------
--- REVISIT: move the fluid search to a separate file?
-
---[[
-Check the fluidbox on the entity. We start with a network tank, so there should only be 1 fluidbox.
-Search connected fluidboxes to find all filters.
-That gives what the system should contain.
-]]
-local function search_fluid_system(entity, sysid, visited)
-  if entity == nil or not entity.valid then
-    return
-  end
-  local unum = entity.unit_number
-  local fluidbox = entity.fluidbox
-  -- visited contains [unit_number]=true, ['locked'= { names }, 'min_temp'=X, max_temp=X}]
-  visited = visited or { filter={} }
-  if unum == nil or fluidbox == nil or visited[unum] ~= nil then
-    return
-  end
-  visited[unum] = true
-
-  -- special case for generators: they allow steam up to 1000 C, but it is a waste, so limit to the real max
-  local max_temp
-  if entity.type == 'generator' then
-    max_temp = entity.prototype.maximum_temperature
-  end
-
-  -- scan, locking onto the first fluid_system_id.
-  --clog('fluid visiting [%s] name=%s type=%s #fluidbox=%s', unum, entity.name, entity.type, #fluidbox)
-  for idx = 1, #fluidbox do
-    local fluid = fluidbox[idx]
-    local id = fluidbox.get_fluid_system_id(idx)
-    if id ~= nil and (sysid == nil or id == sysid) then
-      sysid = id
-      local conn = fluidbox.get_connections(idx)
-      local filt = fluidbox.get_filter(idx)
-      local pipes = fluidbox.get_pipe_connections(idx)
-      --[[
-      clog("   [%s] id=%s capacity=%s fluid=%s filt=%s lock=%s #conn=%s #pipes=%s", idx,
-        id,
-        fluidbox.get_capacity(idx),
-        serpent.line(fluid),
-        serpent.line(filt),
-        serpent.line(fluidbox.get_locked_fluid(idx)),
-        #conn,
-        #pipes)
-      ]]
-      if fluid ~= nil then
-        local tt = visited.contents[fluid.name]
-        if tt == nil then
-          tt = {}
-          visited.contents[fluid.name] = tt
-        end
-        tt[fluid.temperature] = (tt[fluid.temperature] or 0) + fluid.amount
-      end
-
-      -- only care about a fluidbox with pipe connections
-      if #pipes > 0 then
-        -- only update the flow_direction if there is a filter
-        if filt ~= nil then
-          local f = visited.filter
-          local old = f[filt.name]
-          if old == nil then
-            old = { minimum_temperature=filt.minimum_temperature, maximum_temperature=filt.maximum_temperature }
-            f[filt.name] = old
-          else
-            old.minimum_temperature = math.max(old.minimum_temperature, filt.minimum_temperature)
-            old.maximum_temperature = math.min(old.maximum_temperature, filt.maximum_temperature)
-          end
-          -- correct the max steam temp for generators
-          if max_temp ~= nil and max_temp < old.maximum_temperature then
-            old.maximum_temperature = max_temp
-          end
-          for _, pip in ipairs(pipes) do
-            visited.flows[pip.flow_direction] = true
-          end
-        end
-
-        for ci = 1, #conn do
-          search_fluid_system(conn[ci].owner, sysid, visited)
-        end
-      end
-    end
-  end
-end
-
 --[[
 Autoconfigure a network tank.
 ]]
 function M.auto_config(self, event)
-  -- grab the info and do some sanity checking
   local info = GlobalState.get_tank_info(self.unit_number)
   if info == nil then
     return
   end
-  local entity = info.entity
-  if not entity.valid then
-    return
-  end
-  local fluidbox = entity.fluidbox
-  if fluidbox == nil or #fluidbox ~= 1 then
+
+  local config = NetworkTankAutoConfig.auto_config(info.entity)
+  if config == nil then
     return
   end
 
-  --clog("[%s] auto config %s @ %s", self.unit_number, entity.name, serpent.line(entity.position))
-
-  local sysid = fluidbox.get_fluid_system_id(1)
-  local visited = { filter={}, flows={}, contents={} }
-
-  search_fluid_system(entity, sysid, visited)
-  --clog(" ==> filt=%s  flow=%s cont=%s", serpent.line(visited.filter), serpent.line(visited.flows), serpent.line(visited.contents))
-
-  -- if there are no filters, then we can't auto-config
-  if next(visited.filter) == nil then
-    clog("network-tank: AUTO: Connect to a fluid provider or consumer")
-    return
-  end
-
-  -- if there are multitple filters, then we can't auto-config
-  if table_size(visited.filter) ~= 1 then
-    clog("network-tank: AUTO: Too many fluids: %s", serpent.line(visited.filter))
-    return
-  end
-
-  -- if there are multiple flow types, then we can't auto-config
-  if table_size(visited.flows) ~= 1 then
-    clog("network-tank: AUTO: Too many connections.")
-    return
-  end
-
-  if visited.flows.output == true then
+  if config.type == "give" then
     M.set_mode_give(self)
-  else
-    -- single input or input-output, find the best fluid temperature
-    local name, filt = next(visited.filter)
-    self.fluid = name
-    self.elems.fluid_picker.elem_value = name
-    M.set_mode_take(self)
-
-    -- pick a temperature, stick with the default if none available
-    local temps = GlobalState.get_fluids()[name]
-    if temps ~= nil then
-      local max_temp
-      for temp, _ in pairs(temps) do
-        if temp >= filt.minimum_temperature and temp <= filt.maximum_temperature then
-          if max_temp == nil or temp > max_temp then
-            max_temp = temp
-          end
-        end
-      end
-      if max_temp ~= nil then
-        M.set_temperature(self, max_temp)
-      end
-    end
+    return
   end
+
+  self.fluid = config.fluid
+  self.elems.fluid_picker.elem_value = config.fluid
+  M.set_mode_take(self)
+  M.set_temperature(self, config.temperature)
 end
 
 function M.set_mode_give(self)

@@ -569,10 +569,9 @@ function M.register_tank_entity(entity, config)
     return
   end
   if config == nil then
+    -- will get replaced on the first tick
     config = {
-      type = "give",
-      limit = 0,
-      no_limit = true,
+      type = "auto",
      }
   end
 

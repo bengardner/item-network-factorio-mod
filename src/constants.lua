@@ -15,4 +15,10 @@ M.QUEUE_TICKS = 10 -- should be like 10
 -- has to be small enough to be in the constant combinator
 M.UNLIMITED = 2000000000 -- "2G"
 
+M.NETWORK_TANK_NAMES = {
+  ["network-tank"] = "no", -- not created by network-tanks.lua
+  -- ["network-tank-requester"] = true, -- from network to pipes
+  -- ["network-tank-provider"] = false, -- from pipes to network
+  }
+
 return M

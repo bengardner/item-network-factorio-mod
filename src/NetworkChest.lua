@@ -3,7 +3,6 @@ local NetworkChestGui = require "src.NetworkChestGui"
 local UiHandlers = require "src.UiHandlers"
 local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
-local NetworkTankGui = require "src.NetworkTankGui"
 local Event = require('__stdlib__/stdlib/event/event')
 local util = require("util") -- from core/lualib
 local clog = require("src.log_console").log
@@ -40,7 +39,7 @@ local function generic_create_handler(event)
     M.on_create(event, entity)
   elseif entity.name == "network-chest-requester" then
     M.on_create(event, entity)
-  elseif entity.name == "network-tank" then
+  elseif constants.NETWORK_TANK_NAMES[entity.name] ~= nil then
     local config = nil
     if event.tags ~= nil then
       local config_tag = event.tags.config
@@ -78,7 +77,7 @@ function M.on_entity_cloned(event)
     if source_info ~= nil and dest_info ~= nil then
       dest_info.requests = source_info.requests
     end
-  elseif name == "network-tank" then
+  elseif constants.NETWORK_TANK_NAMES[name] ~= nil then
     GlobalState.register_tank_entity(event.source)
     GlobalState.register_tank_entity(event.destination)
     GlobalState.copy_tank_config(
@@ -124,7 +123,8 @@ function M.generic_destroy_handler(event, opts)
       global.mod.network_chest_gui.frame.destroy()
       global.mod.network_chest_gui = nil
     end
-  elseif entity.name == "network-tank" then
+
+  elseif constants.NETWORK_TANK_NAMES[entity.name] ~= nil then
     GlobalState.put_tank_contents_in_network(entity)
     if not opts.do_not_delete_entity then
       GlobalState.delete_tank_entity(unit_number)
@@ -162,7 +162,7 @@ end
 function M.on_marked_for_deconstruction(event)
   if event.entity.name == "network-chest" then
     GlobalState.put_chest_contents_in_network(event.entity)
-  elseif event.entity.name == "network-tank" then
+  elseif constants.NETWORK_TANK_NAMES[event.entity.name] ~= nil then
     GlobalState.put_tank_contents_in_network(event.entity)
   end
 end
@@ -248,9 +248,9 @@ function M.on_player_setup_blueprint(event)
           )
         end
       end
-    elseif entity.name == "network-tank" then
+    elseif constants.NETWORK_TANK_NAMES[entity.name] ~= nil then
       local real_entity = event.surface.find_entity(
-        "network-tank",
+        entity.name,
         entity.position
       )
       if real_entity ~= nil then
@@ -323,8 +323,8 @@ function M.on_entity_settings_pasted(event)
       end
     end
 
-  elseif dest.name == "network-tank" then
-    if source.name == "network-tank" then
+  elseif constants.NETWORK_TANK_NAMES[dest.name] ~= nil  then
+    if source.name == dest.name then
       GlobalState.copy_tank_config(source.unit_number, dest.unit_number)
     end
 
@@ -1129,8 +1129,7 @@ local function update_entity(unit_number, priority)
     return retval
   end
 
-  -- unknown/invalid unit_number
-  clog("Dropped: unknown unum %s", unit_number)
+  -- unknown/invalid unit_number (probably already removed)
   return nil
 end
 
@@ -1345,16 +1344,6 @@ function M.on_gui_opened(event)
     end
 
     NetworkChestGui.on_gui_opened(player, entity)
-  elseif event.gui_type == defines.gui_type.entity and event.entity.name == "network-tank" then
-    local entity = event.entity
-    assert(GlobalState.get_tank_info(entity.unit_number) ~= nil)
-
-    local player = game.get_player(event.player_index)
-    if player == nil then
-      return
-    end
-
-    NetworkTankGui.on_gui_opened(player, entity)
   end
 end
 
@@ -1362,8 +1351,6 @@ function M.on_gui_closed(event)
   local frame = event.element
   if frame ~= nil and frame.name == UiConstants.NV_FRAME then
     NetworkViewUi.on_gui_closed(event)
-  elseif frame ~= nil and frame.name == UiConstants.NT_MAIN_FRAME then
-    NetworkTankGui.on_gui_closed(event)
   elseif frame ~= nil and (frame.name == UiConstants.MAIN_FRAME_NAME or frame.name == UiConstants.MODAL_FRAME_NAME) then
     NetworkChestGui.on_gui_closed(event)
   end

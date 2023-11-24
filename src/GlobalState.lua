@@ -970,8 +970,6 @@ function M.update_queue_lists(update_entity)
     -- nil means entity is invalid.
     if pri_adj ~= nil then
       M.queue_insert(unit_number, old_pri + pri_adj)
-    else
-      clog("Dropped: G unum %s", unit_number)
     end
   end
 end

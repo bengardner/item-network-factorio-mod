@@ -1,10 +1,7 @@
 local UiConstants = require "src.UiConstants"
 local NetworkChestGui = require "src.NetworkChestGui"
 local GlobalState = require "src.GlobalState"
-local NetworkTankGui = require "src.NetworkTankGui"
-local NetworkViewUi = require "src.NetworkViewUi"
-local NetworkViewUi_test = require "src.NetworkViewUi_test"
-local log = require("src.log_console").log
+local clog = require("src.log_console").log
 
 local M = {}
 
@@ -158,6 +155,7 @@ M.event_handlers = {
       NetworkChestGui.open_modal(player, "edit", request_id)
     end,
   },
+  --[[
   {
     name = UiConstants.NT_CHOOSE_TAKE_BTN,
     event = "on_gui_click",
@@ -236,6 +234,13 @@ M.event_handlers = {
     end,
   },
   {
+    name = UiConstants.NT_BTN_AUTO,
+    event = "on_gui_click",
+    handler = function(event, element)
+      NetworkTankGui.auto_config(event.player_index)
+    end,
+  },
+  {
     name = UiConstants.NT_CONFIRM_EVENT,
     event = "on_gui_click",
     handler = function(event, element)
@@ -251,6 +256,7 @@ M.event_handlers = {
       NetworkTankGui.reset(player, ui)
     end,
   },
+  ]]
 }
 
 M.handler_map = {}

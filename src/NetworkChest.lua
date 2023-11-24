@@ -1162,7 +1162,7 @@ function M.handle_logistic_storage(entity, inv)
       if tick_delta > 5*60 then
         -- send contents to network
         GlobalState.put_inventory_in_network(inv)
-        clog("[%s] [%s] storage to network: %s", game.tick, entity.unit_number, serpent.line(new_contents))
+        --clog("[%s] [%s] storage to network: %s", game.tick, entity.unit_number, serpent.line(new_contents))
         info.contents = {} -- assume it was sent
         info.tick = game.tick
       end
@@ -1170,7 +1170,7 @@ function M.handle_logistic_storage(entity, inv)
       -- changed, so reset the timer
       info.contents = new_contents
       info.tick = game.tick
-      clog("[%s] [%s] storage updated: %s", game.tick, entity.unit_number, serpent.line(new_contents))
+      --clog("[%s] [%s] storage updated: %s", game.tick, entity.unit_number, serpent.line(new_contents))
     end
   end
 end

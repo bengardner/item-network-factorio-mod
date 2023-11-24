@@ -9,6 +9,8 @@ local clog = require("src.log_console").log
 -- network_tank_on_gui_opened() as the first parameter.
 local M = {}
 
+local debug_fluids = false
+
 -- the default is to give/provide everything
 local default_config = {
   type = "give",
@@ -39,9 +41,19 @@ local function search_fluid_system(entity, sysid, visited)
   if entity.type == 'generator' then
     max_temp = entity.prototype.maximum_temperature
   end
+  -- and there is at least one mining drill that declared its output as 'input-output'
+  local mining_drill
+  if entity.type == 'mining-drill' then
+    local fbp = entity.prototype.fluidbox_prototypes
+    for _, v in ipairs(fbp) do
+      mining_drill = v.production_type
+    end
+  end
 
   -- scan, locking onto the first fluid_system_id.
-  --clog('fluid visiting [%s] name=%s type=%s #fluidbox=%s', unum, entity.name, entity.type, #fluidbox)
+  if debug_fluids then
+    clog('fluid visiting [%s] name=%s type=%s #fluidbox=%s', unum, entity.name, entity.type, #fluidbox)
+  end
   for idx = 1, #fluidbox do
     local fluid = fluidbox[idx]
     local id = fluidbox.get_fluid_system_id(idx)
@@ -50,16 +62,18 @@ local function search_fluid_system(entity, sysid, visited)
       local conn = fluidbox.get_connections(idx)
       local filt = fluidbox.get_filter(idx)
       local pipes = fluidbox.get_pipe_connections(idx)
-      --[[
-      clog("   [%s] id=%s capacity=%s fluid=%s filt=%s lock=%s #conn=%s #pipes=%s", idx,
-        id,
-        fluidbox.get_capacity(idx),
-        serpent.line(fluid),
-        serpent.line(filt),
-        serpent.line(fluidbox.get_locked_fluid(idx)),
-        #conn,
-        #pipes)
-      ]]
+
+      if debug_fluids then
+        clog("   [%s] id=%s capacity=%s fluid=%s filt=%s lock=%s #conn=%s #pipes=%s mining_drill=%s", idx,
+          id,
+          fluidbox.get_capacity(idx),
+          serpent.line(fluid),
+          serpent.line(filt),
+          serpent.line(fluidbox.get_locked_fluid(idx)),
+          #conn,
+          #pipes, serpent.line(mining_drill))
+      end
+
       if fluid ~= nil then
         local tt = visited.contents[fluid.name]
         if tt == nil then
@@ -67,6 +81,15 @@ local function search_fluid_system(entity, sysid, visited)
           visited.contents[fluid.name] = tt
         end
         tt[fluid.temperature] = (tt[fluid.temperature] or 0) + fluid.amount
+      end
+
+      -- FIXME: I can't figure out how to detect that the drill needs "sulfuric-acid",
+      --  so I fake a filter. I don't like to special-case crap. Oh, well.
+      if filt == nil and mining_drill == 'input-output' then
+        local sap = game.fluid_prototypes["sulfuric-acid"]
+        if sap ~= nil then
+          filt = { name = "sulfuric-acid", minimum_temperature = sap.default_temperature, maximum_temperature = sap.default_temperature }
+        end
       end
 
       -- only care about a fluidbox with pipe connections
@@ -82,6 +105,8 @@ local function search_fluid_system(entity, sysid, visited)
             old.minimum_temperature = math.max(old.minimum_temperature, filt.minimum_temperature)
             old.maximum_temperature = math.min(old.maximum_temperature, filt.maximum_temperature)
           end
+          old.output_override = (mining_drill == 'output')
+          old.mining_drill = mining_drill
           -- correct the max steam temp for generators
           if max_temp ~= nil and max_temp < old.maximum_temperature then
             old.maximum_temperature = max_temp
@@ -133,13 +158,17 @@ function M.auto_config(entity)
     return -- nil
   end
 
-  --clog("[%s] auto config %s @ %s", entity.unit_number, entity.name, serpent.line(entity.position))
+  if debug_fluids then
+    clog("[%s] auto config %s @ %s", entity.unit_number, entity.name, serpent.line(entity.position))
+  end
 
   local sysid = fluidbox.get_fluid_system_id(1)
   local visited = { filter={}, flows={}, contents={} }
 
   search_fluid_system(entity, sysid, visited)
-  --clog(" ==> filt=%s  flow=%s cont=%s", serpent.line(visited.filter), serpent.line(visited.flows), serpent.line(visited.contents))
+  if debug_fluids then
+    clog(" ==> filt=%s  flow=%s cont=%s", serpent.line(visited.filter), serpent.line(visited.flows), serpent.line(visited.contents))
+  end
 
   -- if there are no filters, then we can't auto-config
   if next(visited.filter) == nil then
@@ -167,6 +196,13 @@ function M.auto_config(entity)
 
   -- single input or input-output, find the best fluid temperature
   local name, filt = next(visited.filter)
+
+  -- if we have an input-output, then we need to wait to see if there is fluid provided
+  if visited.flows['input-output'] == true then
+    if filt.output_override == true then
+      return table.deepcopy(default_config)
+    end
+  end
 
   local fluid_proto = game.fluid_prototypes[name]
   if fluid_proto == nil then

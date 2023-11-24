@@ -7,7 +7,7 @@ local NetworkTankGui = require "src.NetworkTankGui"
 local Event = require('__stdlib__/stdlib/event/event')
 local util = require("util") -- from core/lualib
 local clog = require("src.log_console").log
-local tables_have_same_keys = require("src.tables_have_same_keys").tables_have_same_keys
+local tabutils = require("src.tables_have_same_keys")
 local constants             = require("constants")
 
 local M = {}
@@ -106,17 +106,20 @@ function M.generic_destroy_handler(event, opts)
   end
 
   local entity = event.entity
-  if entity.unit_number == nil then
+  local unit_number = entity.unit_number
+  if unit_number == nil then
     return
   end
+
+  GlobalState.entity_info_set(unit_number, nil)
 
   if util.string_starts_with(entity.name, "network-chest") then
     GlobalState.put_chest_contents_in_network(entity)
     if not opts.do_not_delete_entity then
-      GlobalState.delete_chest_entity(entity.unit_number)
+      GlobalState.delete_chest_entity(unit_number)
     end
     if global.mod.network_chest_gui ~= nil and
-       global.mod.network_chest_gui.entity.unit_number == entity.unit_number
+       global.mod.network_chest_gui.entity.unit_number == unit_number
     then
       global.mod.network_chest_gui.frame.destroy()
       global.mod.network_chest_gui = nil
@@ -124,13 +127,15 @@ function M.generic_destroy_handler(event, opts)
   elseif entity.name == "network-tank" then
     GlobalState.put_tank_contents_in_network(entity)
     if not opts.do_not_delete_entity then
-      GlobalState.delete_tank_entity(entity.unit_number)
+      GlobalState.delete_tank_entity(unit_number)
     end
+
   elseif GlobalState.is_logistic_entity(entity.name) then
     GlobalState.put_chest_contents_in_network(entity)
-    GlobalState.logistic_del(entity.unit_number)
+    GlobalState.logistic_del(unit_number)
+
   elseif GlobalState.is_vehicle_entity(entity.name) then
-    GlobalState.vehicle_del(entity.unit_number)
+    GlobalState.vehicle_del(unit_number)
   end
 end
 
@@ -611,7 +616,7 @@ local function update_network_chest_unconfigured_locked(info, inv, contents)
   end
 
   -- check if the list of locked items changed
-  if tables_have_same_keys(info.locked_items, leftovers) then
+  if tabutils.tables_have_same_keys(info.locked_items, leftovers) then
     -- nope! we are done.
     return status
   end
@@ -815,7 +820,7 @@ local function update_network_chest_configured_locked(info, inv, contents)
   local status, locked_items = update_network_chest_configured_common(info, inv, contents)
 
   -- check if the list of locked items changed
-  if tables_have_same_keys(info.locked_items, locked_items) then
+  if tabutils.tables_have_same_keys(info.locked_items, locked_items) then
     return status
   end
 
@@ -1133,6 +1138,34 @@ function M.update_queue()
   GlobalState.update_queue(update_entity)
 end
 
+function M.handle_logistic_storage(entity, inv)
+  local new_contents = inv.get_contents()
+  if next(new_contents) ~= nil then
+    local info = GlobalState.entity_info_get(entity.unit_number)
+    if info == nil then
+      info = { contents = new_contents, tick = game.tick }
+      GlobalState.entity_info_set(entity.unit_number, info)
+      return
+    end
+
+    if tabutils.tables_have_same_counts(new_contents, info.contents) then
+      local tick_delta = game.tick - info.tick
+      if tick_delta > 5*60 then
+        -- send contents to network
+        GlobalState.put_inventory_in_network(inv)
+        clog("[%s] [%s] storage to network: %s", game.tick, entity.unit_number, serpent.line(new_contents))
+        info.contents = {} -- assume it was sent
+        info.tick = game.tick
+      end
+    else
+      -- changed, so reset the timer
+      info.contents = new_contents
+      info.tick = game.tick
+      clog("[%s] [%s] storage updated: %s", game.tick, entity.unit_number, serpent.line(new_contents))
+    end
+  end
+end
+
 function M.update_entity_logistic(entity)
   -- sanity check
   if not entity.valid then
@@ -1140,7 +1173,13 @@ function M.update_entity_logistic(entity)
   end
 
   if settings.global["item-network-enable-logistic-chest"].value and not entity.to_be_deconstructed() then
-    M.inventory_handle_requests(entity, entity.get_output_inventory())
+    -- this might be a requester or storage
+    local logistic_mode = GlobalState.get_logistic_mode(entity.name)
+    if logistic_mode == "storage" then
+      M.handle_logistic_storage(entity, entity.get_output_inventory())
+    else
+      M.inventory_handle_requests(entity, entity.get_output_inventory())
+    end
   end
 
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX

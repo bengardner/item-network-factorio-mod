@@ -75,6 +75,11 @@ function M.inner_setup()
     }
   end
 
+  if global.mod.entity_info == nil then
+    -- random info that is automatically removed when the entity is destroyed
+    global.mod.entity_info = {} -- key=unit_number, val=table
+  end
+
   if global.mod.scan_queues == nil then
     M.reset_queues()
   end
@@ -420,7 +425,7 @@ function M.logistic_scan_prototypes()
     filter = "type",
     type = "logistic-container",
   } }) do
-    if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" then
+    if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
       info[name] = prot.logistic_mode
     end
   end
@@ -429,6 +434,10 @@ end
 
 function M.is_logistic_entity(item_name)
   return global.mod.logistic_names[item_name] ~= nil
+end
+
+function M.get_logistic_mode(item_name)
+  return global.mod.logistic_names[item_name]
 end
 
 -- called once at startup if the logistc entity prototype list changed
@@ -443,6 +452,14 @@ function M.logistic_scan_surfaces()
       M.logistic_add_entity(ent)
     end
   end
+end
+
+function M.entity_info_get(unit_number)
+  return global.mod.entity_info[unit_number]
+end
+
+function M.entity_info_set(unit_number, info)
+  global.mod.entity_info[unit_number] = info
 end
 
 function M.get_logistic_entity(unit_number)

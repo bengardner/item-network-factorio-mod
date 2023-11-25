@@ -9,6 +9,7 @@ local clog = require("src.log_console").log
 local tabutils = require("src.tables_have_same_keys")
 local constants = require("constants")
 local NetworkTankAutoConfig = require("src.NetworkTankAutoConfig")
+local ServiceEntity = require("src.ServiceEntity")
 
 local M = {}
 
@@ -53,6 +54,10 @@ local function generic_create_handler(event)
     GlobalState.logistic_add_entity(entity)
   elseif GlobalState.is_vehicle_entity(entity.name) then
     GlobalState.vehicle_add_entity(entity)
+  elseif GlobalState.is_service_entity(entity.name) then
+    GlobalState.service_add_entity(entity)
+  --else
+  --  clog("created unhandled %s [%s] %s", entity.name, entity.type, entity.unit_number)
   end
 end
 
@@ -89,6 +94,10 @@ function M.on_entity_cloned(event)
     GlobalState.logistic_add_entity(event.destination)
   elseif GlobalState.is_vehicle_entity(name) then
     GlobalState.vehicle_add_entity(event.destination)
+  elseif GlobalState.is_vehicle_entity(name) then
+    GlobalState.vehicle_add_entity(event.destination)
+  elseif GlobalState.is_service_entity(name) then
+    GlobalState.service_add_entity(event.destination)
   end
 end
 
@@ -137,6 +146,10 @@ function M.generic_destroy_handler(event, opts)
 
   elseif GlobalState.is_vehicle_entity(entity.name) then
     GlobalState.vehicle_del(unit_number)
+
+  elseif GlobalState.is_service_entity(entity.name) then
+    GlobalState.service_del(unit_number)
+
   end
 end
 
@@ -1084,7 +1097,7 @@ local function update_entity_tank(unit_number, info)
     return GlobalState.UPDATE_STATUS.INVALID
   end
 
-  -- 'to_be_deconstructed()'' may be temporary
+  -- 'to_be_deconstructed()' may be temporary
   if info.config == nil or entity.to_be_deconstructed() then
     return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
@@ -1135,6 +1148,15 @@ local function update_entity(unit_number, priority)
     local retval = M.update_entity_vehicle(entity)
     if retval == nil then
       clog("vehicle drop: %s", serpent.line(info))
+    end
+    return retval
+  end
+
+  entity = GlobalState.get_service_entity(unit_number)
+  if entity ~= nil then
+    local retval = ServiceEntity.update_entity(entity)
+    if retval == nil then
+      clog("service drop: %s", serpent.line(info))
     end
     return retval
   end

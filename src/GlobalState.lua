@@ -111,6 +111,11 @@ function M.inner_setup()
     M.vehicle_scan_surfaces()
   end
 
+  if global.mod.serviced == nil then
+    global.mod.serviced = {} -- vehicles[unit_number] = entity
+    M.service_scan_surfaces()
+  end
+
   if global.mod.logistic == nil then
     global.mod.logistic = {} -- key=unit_number, val=entity
   end
@@ -512,6 +517,64 @@ function M.vehicle_del(unit_number)
   global.mod.vehicles[unit_number] = nil
 end
 
+-------------------------------------------------------------------------------
+
+M.service_names_table = {}
+
+function M.get_service_names()
+  if next(M.service_names_table) == nil then
+    -- add refuel targets (coal/chemical only) and assemblers
+    for _, prot in pairs(game.entity_prototypes) do
+      if prot.has_flag("player-creation") then
+        -- check for stuff that burns coal
+        if prot.burner_prototype ~= nil and prot.burner_prototype.fuel_categories.chemical == true then
+          M.service_names_table[prot.name] = { not prot.is_building, false }
+        end
+        if prot.type == "assembling-machine" then
+          M.service_names_table[prot.name] = { not prot.is_building, false }
+        end
+      end
+    end
+    clog("service_names = %s", serpent.line(M.service_names_table))
+  end
+  return M.service_names_table
+end
+
+function M.is_service_entity(name)
+  return M.get_service_names()[name] ~= nil
+end
+
+function M.service_scan_surfaces()
+  local names = {}
+  for n, _ in pairs(M.get_service_names()) do
+    table.insert(names, n)
+  end
+
+  for _, surface in pairs(game.surfaces) do
+    local entities = surface.find_entities_filtered { name = names }
+    for _, entity in ipairs(entities) do
+      M.service_add_entity(entity)
+    end
+  end
+end
+
+function M.get_service_entity(unit_number)
+  return global.mod.serviced[unit_number]
+end
+
+function M.service_add_entity(entity)
+  if global.mod.serviced[entity.unit_number] == nil then
+    global.mod.serviced[entity.unit_number] = entity
+    M.queue_insert(entity.unit_number, 0)
+  end
+end
+
+function M.service_del(unit_number)
+  global.mod.serviced[unit_number] = nil
+end
+
+-------------------------------------------------------------------------------
+
 function M.sensor_add(entity)
   global.mod.sensors[entity.unit_number] = entity
 end
@@ -547,18 +610,38 @@ function M.delete_chest_entity(unit_number)
   global.mod.chests[unit_number] = nil
 end
 
-function M.put_inventory_in_network(inv, status)
-  status = status or M.UPDATE_STATUS.NOT_UPDATED
+--[[
+Move items from inv to the network, if possible.
+Respects limits. A bit slower than items_inv_to_net().
+]]
+function M.items_inv_to_net_with_limits(inv)
+  if inv ~= nil then
+    local contents = inv.get_contents()
+    for item, count in pairs(contents) do
+      local n_trans = math.min(M.get_insert_count(item), count)
+      if n_trans > 0 then
+        local n_moved = inv.remove({ name=item, count=n_trans })
+        if n_moved > 0 then
+          M.increment_item_count(item, n_moved)
+        end
+      end
+    end
+  end
+end
+
+--[[
+Move items from inv to the network. No limit checks.
+]]
+function M.items_inv_to_net(inv)
   if inv ~= nil then
     local contents = inv.get_contents()
     for item, count in pairs(contents) do
       M.increment_item_count(item, count)
-      status = M.UPDATE_STATUS.UPDATED
     end
     inv.clear()
   end
-  return status
 end
+M.put_inventory_in_network = M.items_inv_to_net
 
 function M.put_chest_contents_in_network(entity)
   M.put_inventory_in_network(entity.get_output_inventory())

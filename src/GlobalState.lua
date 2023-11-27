@@ -519,25 +519,33 @@ end
 
 -------------------------------------------------------------------------------
 
-M.service_names_table = {}
-
 function M.get_service_names()
-  if next(M.service_names_table) == nil then
+  if global.service_names_table == nil then
+    global.service_names_table = {}
+  end
+  if next(global.service_names_table) == nil then
     -- add refuel targets (coal/chemical only) and assemblers
     for _, prot in pairs(game.entity_prototypes) do
+      local add_it = false
       if prot.has_flag("player-creation") then
         -- check for stuff that burns coal
         if prot.burner_prototype ~= nil and prot.burner_prototype.fuel_categories.chemical == true then
-          M.service_names_table[prot.name] = { not prot.is_building, false }
-        end
-        if prot.type == "assembling-machine" then
-          M.service_names_table[prot.name] = { not prot.is_building, false }
+          add_it = true
+        elseif prot.type == "assembling-machine" or prot.type == "furnace" then
+          add_it = true
+        elseif prot.type == "ammo-turret" or prot.type == "artillery-turret" then
+          add_it = true
+        elseif prot.name == "burner-lab" or prot.name == "burner-inserter" or prot.type == "burner-generator" then
+          add_it = true
         end
       end
+      if add_it then
+        global.service_names_table[prot.name] = { not prot.is_building, false }
+      end
     end
-    clog("service_names = %s", serpent.line(M.service_names_table))
+    --clog("service_names = %s", serpent.line(global.service_names_table))
   end
-  return M.service_names_table
+  return global.service_names_table
 end
 
 function M.is_service_entity(name)

@@ -33,25 +33,38 @@ local function transfer_item_to_inv(entity, inv, name, count)
       if n_added > 0 then
         GlobalState.increment_item_count(name, -n_added)
         --clog("[%s] %s : added %s %s", entity.unit_number, entity.name, name, n_added)
+      else -- if n_added < n_trans then
+        GlobalState.missing_item_set(name, entity.unit_number, n_trans)
       end
     end
   end
 end
 
+local fuel_list = {
+  --"processed-fuel",
+  "coal",
+  "wood",
+}
+
 local function service_refuel(entity)
-  -- we only do coal for now
-  local fuel_name = "coal"
-  local prot = game.item_prototypes[fuel_name]
-
   local inv = entity.get_fuel_inventory()
-  if inv ~= nil then
-    -- add coal if empty
-    if inv.is_empty() then
-      -- need to NOT fill it to the top or we can cause a deadlock
-      transfer_item_to_inv(entity, inv, fuel_name, (#inv * prot.stack_size) - 12)
-      return
-    end
+  if inv == nil then
+    return
+  end
 
+  if inv.is_empty() then
+    for _, fuel_name in ipairs(fuel_list) do
+      local prot = game.item_prototypes[fuel_name]
+      local n_avail = GlobalState.get_item_count(fuel_name)
+      if prot ~= nil and n_avail > 0 then
+        -- add some if if empty
+        -- need to NOT fill it to the top or we can cause a deadlock
+        local n_add = (#inv * prot.stack_size) - 12
+        transfer_item_to_inv(entity, inv, fuel_name, math.min(n_avail, n_add))
+        return
+      end
+    end
+  else
     -- try to top off the fuel(s)
     for fuel, _ in ipairs(inv.get_contents()) do
       local fuel_prot = game.item_prototypes[fuel]
@@ -76,7 +89,45 @@ local function service_recipe_inv(entity, inv, recipe, factor)
         local n_need = math.max(ing.amount, math.max(ing.amount * factor, prot.stack_size))
         if n_have < n_need then
           transfer_item_to_inv(entity, inv, ing.name, n_need - n_have)
+          n_have = inv.get_item_count(ing.name)
+          if n_have < ing.amount then
+            GlobalState.missing_item_set(ing.name, entity.unit_number, ing.amount - n_have)
+          end
         end
+      end
+    end
+  end
+end
+
+-- TODO: search this on startup. categories: "artillery-shell", "cannon-shell", "flamethrower", "rocket", "shotgun-shell"
+-- "ammo" category "bullet"
+local ammo_bullet_types = {
+  "uranium-rounds-magazine",   -- damage 24
+  "piercing-rounds-magazine",  -- damage @ ammo_type.action.action_delivery.target_effects[]/type="damage" .damage.amount=8
+  "firearm-magazine",          -- damage 5
+}
+
+-- "ammo" category "artillery-shell"
+local ammo_artillery_shell_types = {
+  "artillery-shell",
+}
+
+local function service_reload_ammo(entity, inv, ammo_names)
+  local automated_ammo_count = entity.prototype.automated_ammo_count
+  local content = inv.get_contents()
+  if next(content) == nil then
+    for _, ammo in ipairs(ammo_names) do
+      local n_avail = GlobalState.get_item_count(ammo)
+      if n_avail > 0 then
+        transfer_item_to_inv(entity, inv, ammo, math.min(automated_ammo_count, n_avail))
+        return
+      end
+    end
+  else
+    for name, count in pairs(content) do
+      if count < automated_ammo_count then
+        transfer_item_to_inv(entity, inv, name, automated_ammo_count - count)
+        return
       end
     end
   end
@@ -111,14 +162,21 @@ function M.update_entity(entity)
 
   elseif entity.type == "assembling-machine" then
     --clog("Service [%s] %s status=%s", entity.unit_number, entity.name, entity.status)
+    service_refuel(entity) -- for 'burner-assembling-machine'
     if entity.status == defines.entity_status.item_ingredient_shortage then
       service_recipe_inv(entity, entity.get_inventory(defines.inventory.assembling_machine_input), entity.get_recipe(), 2)
     end
     GlobalState.items_inv_to_net_with_limits(entity.get_output_inventory())
     -- will stop refill if status becomes "output full"
 
-  elseif entity.name == "boiler" then
+  elseif entity.name == "boiler" or entity.name == "burner-lab" or entity.name == "burner-inserter" or entity.type == "burner-generator" then
     service_refuel(entity)
+
+  elseif entity.type == "ammo-turret" then
+    service_reload_ammo(entity, entity.get_inventory(defines.inventory.turret_ammo), ammo_bullet_types)
+
+  elseif entity.type == "artillery-turret" then
+    service_reload_ammo(entity, entity.get_inventory(defines.inventory.artillery_turret_ammo), ammo_artillery_shell_types)
 
   end
 

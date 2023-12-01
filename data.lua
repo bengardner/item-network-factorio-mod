@@ -148,6 +148,7 @@ function M.add_network_tank()
     fluid_box = {
       base_area = constants.TANK_AREA,
       height = constants.TANK_HEIGHT,
+      pipe_covers = pipecoverspictures(),
       pipe_connections =
       {
         { position = { 0, 1 }, type = "input-output" },
@@ -158,7 +159,7 @@ function M.add_network_tank()
       picture = {
         sheet = {
           filename = Paths.graphics .. "/entities/network-tank.png",
-          size = 64,
+          size = 128,
           scale = 0.5,
         },
       },
@@ -167,8 +168,8 @@ function M.add_network_tank()
         size = 1,
       },
       fluid_background = {
-        filename = Paths.graphics .. "/entities/fluid-background.png",
-        size = { 32, 32 },
+        filename = Paths.graphics .. "/empty-pixel.png",
+        size = { 1, 1 },
       },
       flow_sprite = {
         filename = Paths.graphics .. "/empty-pixel.png",

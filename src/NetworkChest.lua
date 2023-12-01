@@ -1181,7 +1181,8 @@ function M.handle_logistic_storage(entity, inv)
 
     if tabutils.tables_have_same_counts(new_contents, info.contents) then
       local tick_delta = game.tick - info.tick
-      if tick_delta > 5*60 then
+      -- drop content after it does not change for 1 minute
+      if tick_delta > 60*60 then
         -- send contents to network
         GlobalState.put_inventory_in_network(inv)
         --clog("[%s] [%s] storage to network: %s", game.tick, entity.unit_number, serpent.line(new_contents))

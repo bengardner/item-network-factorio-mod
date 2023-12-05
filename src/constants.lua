@@ -1,7 +1,7 @@
 local M = {};
 
 M.NUM_INVENTORY_SLOTS = 48
-M.TANK_AREA = 100
+M.TANK_AREA = 1000
 M.TANK_HEIGHT = 1
 M.MAX_TANK_SIZE = M.TANK_AREA * M.TANK_HEIGHT * 100
 
@@ -9,10 +9,11 @@ M.ALERT_TRANSFER_TICKS = 10 * 60
 M.MAX_MISSING_TICKS = 5 * 60
 
 -- use an array of queues, each must take a minimum of QUEUE_TICKS to process.
-M.QUEUE_COUNT = 10
-M.QUEUE_TICKS = 10 -- should be like 10
+M.QUEUE_TICKS = 20
+M.QUEUE_COUNT = 32
+M.QUEUE_PERIOD_MIN = M.QUEUE_TICKS * M.QUEUE_COUNT
 
--- has to be small enough to be in the constant combinator
+-- has to be small enough to be in the constant combinator, which uses 32-bit signed integers
 M.UNLIMITED = 2000000000 -- "2G"
 
 M.NETWORK_TANK_NAMES = {

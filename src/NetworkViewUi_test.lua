@@ -168,7 +168,7 @@ function M.create_gui(player_index)
   self.children.character_inventory.peer = self.children.network_items
   self.children.network_items.peer = self.children.character_inventory
 
-  -- test
+  --[[ test
   for _, info in pairs(GlobalState.get_chests()) do
     local entity = info.entity
     if entity and entity.valid and entity.name == "network-chest-requester" then
@@ -176,6 +176,7 @@ function M.create_gui(player_index)
       break
     end
   end
+  ]]
 end
 
 function M.add_chest_inventory(self, frame)
@@ -270,6 +271,89 @@ function M.on_gui_closed(event)
   end
 end
 
+local function recurse_find_damage(tab)
+  if tab.type == 'damage' and tab.damage ~= nil then
+    return tab.damage
+  end
+  for k, v in pairs(tab) do
+    if type(v) == 'table' then
+      local rv = recurse_find_damage(v)
+      if rv ~= nil then
+        return rv
+      end
+    end
+  end
+  return nil
+end
+
+local function log_ammo_stuff()
+  --local fuels = {} -- array { name, energy per stack }
+  local ammo_list = {}
+  for _, prot in pairs(game.item_prototypes) do
+    if prot.type == "ammo" then
+      print("-")
+      clog("ammo: %s type=%s attack=%s", prot.name, prot.type, serpent.line(prot.attack_parameters))
+
+      local at = prot.get_ammo_type()
+      if at ~= nil then
+        clog(" - category %s", tt, serpent.line(at.category))
+        if at.category == 'bullet' then
+          local damage = recurse_find_damage(at.action)
+          if damage ~= nil and type(damage.amount) == "number" then
+            clog(" - damage %s", damage.amount)
+
+            local xx = ammo_list[at.category]
+            if xx == nil then
+              xx = {}
+              ammo_list[at.category] = xx
+            end
+            table.insert(xx, { name=prot.name, amount=damage.amount })
+          end
+        end
+      end
+    end
+    if prot.type == "gun" then
+      print("-")
+      clog("gun: %s type=%s attack=%s", prot.name, prot.type, serpent.line(prot.attack_parameters))
+
+      --[[
+      for _, tt in ipairs({ "default", "player", "turret", "vehicle"}) do
+        local at = prot.get_ammo_type(tt)
+        if at ~= nil then
+          clog(" - %s => %s", tt, serpent.line(at.category))
+          local xx = ammo_list[at.category]
+          if xx == nil then
+            xx = {}
+            ammo_list[at.category] =xx
+          end
+          xx[prot.name] = true
+        end
+      end
+      ]]
+    end
+  end
+  for k, xx in pairs(ammo_list) do
+    table.sort(xx, function (a, b) return a.amount > b.amount end)
+  end
+  clog("####   ammo: %s", serpent.line(ammo_list))
+
+  for _, prot in pairs(game.entity_prototypes) do
+    local guns = prot.guns
+    if guns ~= nil then
+      clog(" - %s has guns => %s", prot.name, serpent.line(guns))
+      for idx, ig in pairs(prot.indexed_guns) do
+        local ap = ig.attack_parameters
+        local ac = ap.ammo_categories
+        clog("  ++ %s %s %s :: %s", idx, ig.name, ig.type, serpent.line(ig.attack_parameters.ammo_categories))
+        --clog("   =>> ap %s", serpent.line(ap))
+        for k, v in pairs(ac) do
+          clog("   =>> ac %s = %s", serpent.line(k), serpent.line(v))
+        end
+      end
+    end
+  end
+end
+
 Gui.on_click(UiConstants.TV_PIN_BTN, M.on_click_pin_button)
 Gui.on_click(UiConstants.TV_CLOSE_BTN, M.on_click_close_button)
 Gui.on_click(UiConstants.TV_REFRESH_BTN, M.on_click_refresh_button)
@@ -283,19 +367,17 @@ Event.on_event("in_open_test_view", function (event)
 
 
 Event.on_event("debug-network-item", function (event)
+    GlobalState.log_queue_info()
+    -- log_ammo_stuff()
     --[[ player_index, input_name, cursor_position, ]]
     local player = game.get_player(event.player_index)
     if player ~= nil and player.selected then
       local ent = player.selected
       local unum = ent.unit_number
       clog("EVENT %s ent=[%s] %s %s", serpent.line(event), unum, ent.name, ent.type)
-      local info = GlobalState.get_chest_info(unum)
+      local info = GlobalState.entity_info_get(unum)
       if info ~= nil then
-        clog(" - chest: %s", serpent.line(info))
-      end
-      info = GlobalState.get_tank_info(unum)
-      if info ~= nil then
-        clog(" - tank: %s", serpent.line(info))
+        clog(" - %s", serpent.line(info))
       end
     end
   end)

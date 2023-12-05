@@ -20,36 +20,25 @@ local function gui_destroy(player_index)
 end
 
 --[[
-This is called when the system opens a diaglog for the tank.
-It replaces the dialog with one of our own.
+  Destroys the old gui and retrieves the info for the tank.
+  If found, creates the new window with the preview and save/cancel buttons on the bottom.
+  returns the class instance, main_flow and tank_info
 ]]
-local function network_tank_on_gui_opened(player, entity)
+local function common_on_gui_opened(player, entity)
   -- need to start clean each time; there can be only one open at a time
   gui_destroy(player.index)
 
   local tank_info = GlobalState.get_tank_info(entity.unit_number)
   if tank_info == nil then
-    return
+    return nil
   end
 
-  local default_is_take = true
-  local default_fluid = nil
-  local default_buffer = nil
-  local default_limit = nil
-  local default_temp = nil
-
-  if tank_info.config ~= nil then
-    default_is_take = tank_info.config.type == "take"
-    default_fluid = tank_info.config.fluid
-    default_buffer = tank_info.config.buffer
-    default_limit = tank_info.config.limit
-    default_temp = tank_info.config.temperature
-  end
-
-  local self = my_mgr:create_window(player,  entity.localised_name, {
+  local self = my_mgr:create_window(player, entity.localised_name, {
     window_name = UiConstants.NT_MAIN_FRAME,
     close_button = UiConstants.NT_CLOSE_BTN,
   })
+  self.unit_number = entity.unit_number
+
   local elems = self.elems
 
   local frame = elems.body
@@ -73,7 +62,61 @@ local function network_tank_on_gui_opened(player, entity)
   entity_preview.style.height = 100
   entity_preview.entity = entity
 
-  local main_flow = side_flow.add({ type = "flow", direction = "vertical" })
+  local right_flow = side_flow.add({ type = "flow", direction = "vertical" })
+  local main_flow = right_flow.add({ type = "flow", direction = "vertical" })
+
+  local save_cancel_flow = right_flow.add({
+    type = "flow",
+    direction = "horizontal",
+  })
+  save_cancel_flow.add({
+    name = UiConstants.NT_CONFIRM_EVENT,
+    type = "button",
+    caption = "Save",
+  })
+  save_cancel_flow.add({
+    name = UiConstants.NT_CANCEL_EVENT,
+    type = "button",
+    caption = "Cancel",
+  })
+
+  return self, main_flow, tank_info
+end
+
+--[[
+This is called when the system opens a diaglog for the tank.
+It replaces the dialog with one of our own.
+
+@is_requester true=requester, other=net-tank
+]]
+local function network_tank_on_gui_opened(player, entity, is_requester)
+
+  local self, main_flow, tank_info = common_on_gui_opened(player, entity)
+  if self == nil then
+    return
+  end
+
+  local default_is_take = true
+  local default_fluid = nil
+  local default_buffer = nil
+  local default_limit = nil
+  local default_temp = nil
+
+  if tank_info.config ~= nil then
+    default_is_take = tank_info.config.type == "take"
+    default_fluid = tank_info.config.fluid
+    default_buffer = tank_info.config.buffer
+    default_limit = tank_info.config.limit
+    default_temp = tank_info.config.temperature
+  end
+
+  if is_requester == true then
+    default_is_take = true
+  end
+
+  local elems = self.elems
+
+  local frame = elems.body
 
   local auto_flow = main_flow.add({ type = "flow", direction = "horizontal" })
   auto_flow.add({
@@ -86,7 +129,6 @@ local function network_tank_on_gui_opened(player, entity)
   auto_flow.style.vertical_align = "center"
 
   elems.type_flow = main_flow.add({ type = "flow", direction = "horizontal" })
-
   elems.type_flow.add({ type = "label", caption = "Type:" })
   elems.choose_take_btn = elems.type_flow.add({
     name = UiConstants.NT_CHOOSE_TAKE_BTN,
@@ -94,6 +136,9 @@ local function network_tank_on_gui_opened(player, entity)
     state = default_is_take,
   })
   elems.type_flow.add({ type = "label", caption = "Request" })
+  if is_requester == true then
+    elems.type_flow.visible = false
+  end
 
   elems.choose_give_btn = elems.type_flow.add({
     name = UiConstants.NT_CHOOSE_GIVE_BTN,
@@ -157,6 +202,8 @@ local function network_tank_on_gui_opened(player, entity)
   end
   elems.limit_input.style.width = 100
 
+  --[[
+  add_save_cancel(main_flow)
   local save_cancel_flow = main_flow.add({
     type = "flow",
     direction = "horizontal",
@@ -171,9 +218,7 @@ local function network_tank_on_gui_opened(player, entity)
     type = "button",
     caption = "Cancel",
   })
-
-  -- NOTE: we could store entity, but then we'd need to check valid before accessing unit_number
-  self.unit_number = entity.unit_number
+]]
   self.type = default_is_take and "take" or "give"
   self.fluid = default_fluid
   self.buffer = default_buffer
@@ -181,6 +226,27 @@ local function network_tank_on_gui_opened(player, entity)
   self.temperature = default_temp
 
   M.update_input_visibility(self)
+end
+
+--[[
+
+]]
+local function network_tank_provider_on_gui_opened(player, entity)
+  local self, main_flow, tank_info = common_on_gui_opened(player, entity)
+  if self == nil then
+    return
+  end
+
+  local default_buffer = nil
+
+  if tank_info.config ~= nil then
+    default_buffer = tank_info.config.buffer
+  end
+
+  self.type = "give"
+  self.buffer = default_buffer
+
+  M.update_buffer_slider(self)
 end
 
 function M.reset(self)
@@ -231,22 +297,14 @@ end
 function M.get_config_from_network_tank_ui(self)
   local type = self.type
   local fluid = self.fluid
-  local buffer = self.buffer
-  local limit = self.limit
-  local temperature = self.temperature
+  local buffer = self.buffer or 0
+  local limit = self.limit or 0
+  local temperature = self.temperature or 0
+
+  buffer = math.max(0, math.min(buffer, Constants.MAX_TANK_SIZE))
+  limit = math.max(0, limit)
 
   if type == "take" then
-    if type == nil or fluid == nil or temperature == nil or buffer == nil or limit == nil then
-      return nil
-    end
-
-    if buffer <= 0 or limit < 0 then
-      return nil
-    end
-
-    if buffer > Constants.MAX_TANK_SIZE then
-      buffer = Constants.MAX_TANK_SIZE
-    end
 
     local config = {
       type = type,
@@ -261,16 +319,9 @@ function M.get_config_from_network_tank_ui(self)
     return config
 
   else
-    if type == nil then
-      return nil
-    end
-
-    if limit == nil or limit < 0 then
-      limit = 0
-    end
-
+    -- "give" meaning sending to the network
     local config = {
-      type = type,
+      type = "give",
       limit = limit,
     }
     if limit == 0 then
@@ -402,14 +453,18 @@ Event.on_event(
   function (event)
     if event.gui_type == defines.gui_type.entity then
       local val = Constants.NETWORK_TANK_NAMES[event.entity.name]
-      if val ~= nil and val ~= false then
+      if val ~= nil then
         local entity = event.entity
         assert(GlobalState.get_tank_info(entity.unit_number) ~= nil)
         local player = game.get_player(event.player_index)
         if player == nil then
           return
         end
-        network_tank_on_gui_opened(player, entity)
+        if val == false then
+          -- network_tank_provider_on_gui_opened(player, entity, val)
+        else
+          network_tank_on_gui_opened(player, entity, val)
+        end
       end
     end
   end

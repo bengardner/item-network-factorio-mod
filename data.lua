@@ -4,6 +4,7 @@ local Hotkeys = require "src.Hotkeys"
 
 require "src.prototypes.network-sensor"
 require "src.prototypes.network-chests"
+require "src.prototypes.network-tanks"
 
 local M = {}
 

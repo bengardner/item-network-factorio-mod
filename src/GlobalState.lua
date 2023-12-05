@@ -3,6 +3,7 @@ local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
 local constants = require "src.constants"
 local clog = require("src.log_console").log
+local Event = require('__stdlib__/stdlib/event/event')
 
 local M = {}
 
@@ -64,15 +65,38 @@ Everything starts at priotirty 0 when created/added.
 
   - Logistics
     * Always lowest priority (no rush -- let the robots scurry)
-]]
+
+
+  global.mod.entity_info = {} -- key=unit_number, val=table
+  entity_info contents:
+    {
+      entity = LuaEntity,             -- reference to the entity (which may not be valid anymore)
+      service_type = "network-chest", -- service type used in a service look-up table
+      service_tick = 111,             -- last tick when this was serviced
+      service_delta = 222,            -- tick delta at last service
+      service_priority = 5,           -- priority at the last service
+      -- the rest depend on the type
+      requests = { ... },             -- chest requests
+      recent_items = { ... },         -- recent items for auto-provider chest
+      config = { ... },               -- network-tank config
+      contents = { ... },             -- last get_contents() result for logistic Storage chest
+    }
+ ]]
 
 function M.inner_setup()
+  global.ammo_table = nil
+  global.fuel_table = nil
+
   if global.mod == nil then
     global.mod = {
       rand = game.create_random_generator(),
-      chests = {},
       items = {},
+      item_limits = {}
     }
+  end
+
+  if global.service_names ~= nil then
+    global.service_names = nil -- undo mistake -- called name_service_map, below
   end
 
   if global.mod.entity_info == nil then
@@ -80,17 +104,14 @@ function M.inner_setup()
     global.mod.entity_info = {} -- key=unit_number, val=table
   end
 
-  if global.mod.scan_queues == nil then
+  if global.mod.scan_queues == nil or (#global.mod.scan_queues ~= constants.QUEUE_COUNT) then
     M.reset_queues()
   end
+  M.log_queue_info()
 
   M.remove_old_ui()
   if global.mod.player_info == nil then
     global.mod.player_info = {}
-  end
-
-  if global.mod.network_chest_has_been_placed == nil then
-    global.mod.network_chest_has_been_placed = true -- (global.mod.scan_queue.size + global.mod.scan_queue_inactive.size) > 0
   end
 
   if global.mod.fluids == nil then
@@ -102,146 +123,123 @@ function M.inner_setup()
   if global.mod.missing_fluid == nil then
     global.mod.missing_fluid = {} -- missing_fluid[key][unit_number] = { game.tick, count }
   end
-  if global.mod.tanks == nil then
-    global.mod.tanks = {}
-  end
 
-  if global.mod.vehicles == nil then
-    global.mod.vehicles = {} -- vehicles[unit_number] = entity
-    M.vehicle_scan_surfaces()
-  end
-
-  if global.mod.serviced == nil then
-    global.mod.serviced = {} -- vehicles[unit_number] = entity
-    M.service_scan_surfaces()
-  end
-
-  if global.mod.logistic == nil then
-    global.mod.logistic = {} -- key=unit_number, val=entity
-  end
   if global.mod.logistic_names == nil then
     global.mod.logistic_names = {} -- key=item name, val=logistic_mode from prototype
   end
-  local logistic_names = M.logistic_scan_prototypes()
-  if not tables_have_same_keys(logistic_names, global.mod.logistic_names) then
-    global.mod.logistic_names = logistic_names
-    global.mod.logistic = {}
-    M.logistic_scan_surfaces()
+  local name_service_map = M.scan_prototypes()
+  if not tables_have_same_keys(name_service_map, global.name_service_map) then
+    global.name_service_map = name_service_map
+    M.scan_surfaces()
+  end
+
+  -- major upgrade to unified entity info table
+  if global.mod.chests ~= nil then
+    M.convert_to_entity_info()
   end
 
   if global.mod.alert_trans == nil then
     global.mod.alert_trans = {} -- alert_trans[unit_number] = game.tick
   end
 
-  if not global.mod.has_run_fluid_temp_conversion then
-    local new_fluids = {}
-    for fluid, count in pairs(global.mod.fluids) do
-      local default_temp = game.fluid_prototypes[fluid].default_temperature
-      new_fluids[fluid] = {}
-      new_fluids[fluid][default_temp] = count
-    end
-    global.mod.fluids = new_fluids
-    local n_tanks = 0
-    for _, entity in pairs(global.mod.tanks) do
-      n_tanks = n_tanks + 1
-      if entity.config ~= nil then
-        entity.config.temperature =
-          game.fluid_prototypes[entity.config.fluid].default_temperature
-      end
-    end
-    if n_tanks > 0 then
-      clog(
-        "Migrated Item Network fluids to include temperatures. Warning: If you provide a fluid at a non-default temperature (like steam), you will have to update every requester tank to use the new fluid temperature.")
-    end
-    global.mod.has_run_fluid_temp_conversion = true
-  end
-
   if global.mod.sensors == nil then
     global.mod.sensors = {}
   end
-
-  if global.mod.item_limits == nil then
-    global.mod.item_limits = {}
-    M.limit_scan()
-  end
-  -- TEST: remove when good
-  --M.limit_scan()
 
   -- TEST: reset the queues; causes desync in multiplayer
   --M.reset_queues()
 end
 
+local function generic_add_entity(entity, info)
+  if entity ~= nil and entity.valid then
+    local service_type = M.get_service_type_for_entity(entity.name)
+    if service_type == nil then
+      --clog("created unhandled %s [%s] %s", entity.name, entity.type, entity.unit_number)
+      return
+    end
+
+    clog("generic_add [%s] => %s", entity.name, serpent.line(service_type))
+    if type(service_type.create) == "function" then
+      service_type.create(entity, info or {})
+    else
+      clog("ERROR: no create for %s", entity.name)
+    end
+  end
+end
+
+
+function M.convert_to_entity_info()
+  --[[
+      {
+      entity = LuaEntity,             -- reference to the entity (which may not be valid anymore)
+      service_type = "network-chest", -- service type used in a service look-up table (required)
+      service_tick = 111,             -- last tick when this was serviced (auto)
+      service_delta = 222,            -- tick delta at last service (auto)
+      service_priority = 5,           -- priority at the last service (auto)
+      -- the rest depend on the type
+      requests = { ... },             -- chest requests
+      recent_items = { ... },         -- recent items for auto-provider chest
+      config = { ... },               -- network-tank config
+      contents = { ... },             -- last get_contents() result for logistic Storage chest
+    }
+  ]]
+
+  global.name_service_map = M.scan_prototypes()
+
+  -- chests need a 'service_type' field
+  for unum, info in pairs(global.mod.chests or {}) do
+    if info.entity ~= nil and info.entity.valid then
+      generic_add_entity(info.entity, info)
+    end
+  end
+  global.mod.chests = nil
+
+  -- tanks need a 'service_type' field
+  for unum, info in pairs(global.mod.tanks or {}) do
+    if info.entity ~= nil and info.entity.valid then
+      generic_add_entity(info.entity, info)
+    end
+  end
+  global.mod.tanks = nil
+
+  -- vehicles was misnamed, as it only handles the spidertron
+  for unum, ent in pairs(global.mod.vehicles or {}) do
+    generic_add_entity(ent)
+  end
+  global.mod.vehicles = nil
+
+  for unum, ent in pairs(global.mod.logistic or {}) do
+    generic_add_entity(ent)
+  end
+  global.mod.logistic = nil
+
+  for unum, ent in pairs(global.mod.serviced or {}) do
+    generic_add_entity(ent)
+  end
+  global.mod.serviced = nil
+
+  M.scan_surfaces()
+end
+
 function M.reset_queues()
+  print("RESET SCAN QUEUE")
   global.mod.scan_deadline = 0 -- keep doing nothing until past this tick
   global.mod.scan_index = 1 -- working on the queue in this index
 
   global.mod.scan_queues = {} -- list of queues to process
   for idx = 1, constants.QUEUE_COUNT do
-    -- key=unit_nubmer, val=priority
+    -- key=unit_number, val=priority
     global.mod.scan_queues[idx] = {}
   end
 
-  if global.mod.chests ~= nil then
-    for unum, _ in pairs(global.mod.chests) do
-      M.queue_insert(unum, 1)
-    end
-  end
-  if global.mod.tanks ~= nil then
-    for unum, _ in pairs(global.mod.tanks) do
-      M.queue_insert(unum, 2)
-    end
-  end
-  if global.mod.vehicles ~= nil then
-    for unum, _ in pairs(global.mod.vehicles) do
-      M.queue_insert(unum, 3)
-    end
-  end
-  if global.mod.logistic ~= nil then
-    for unum, _ in pairs(global.mod.logistic) do
-      M.queue_insert(unum, 4)
-    end
-  end
-end
-
--- scan existing tanks and chests and use the max "give" limit as the item limit
-function M.limit_scan(item)
-  local limits = global.mod.item_limits
-  local unlimited = constants.UNLIMITED
-
-  for _, info in pairs(global.mod.chests) do
-    if info.requests ~= nil then
-      for _, req in ipairs(info.requests) do
-        if req.type == "give" then
-          local old_limit = limits[req.item]
-          local new_limit = req.limit
-          if req.no_limit == true then
-            new_limit = unlimited
-          end
-          if old_limit == nil or old_limit < new_limit then
-            limits[req.item] = new_limit
-          end
-        end
-      end
-    end
-  end
-
-  for _, info in pairs(global.mod.tanks) do
-    local config = info.config
-    if config ~= nil then
-      if config.type == "give" then
-        if config.temperature ~= nil and config.fluid ~= nil then
-          local key = M.fluid_temp_key_encode(config.fluid, config.temperature)
-          local old_limit = limits[key]
-          local new_limit = config.limit
-          if config.no_limit == true then
-            new_limit = unlimited
-          end
-          if old_limit == nil or old_limit < new_limit then
-            limits[config.fluid] = new_limit
-            --game.print(string.format("updated limit %s %s", key, config.limit))
-          end
-        end
-      end
+  -- add all entities, spreading them evenly
+  local pri = 0
+  for unum, info in pairs(global.mod.entity_info) do
+    info.service_priority = pri
+    M.queue_insert(unum, info)
+    pri = pri + 1
+    if pri > constants.QUEUE_COUNT - 2 then
+      pri = 0
     end
   end
 end
@@ -412,31 +410,6 @@ function M.rand_hex(len)
   return table.concat(chars, "")
 end
 
---[[
-function M.shuffle(list)
-  for i = #list, 2, -1 do
-    local j = global.mod.rand(i)
-    list[i], list[j] = list[j], list[i]
-  end
-end
-]]
-
--- get a table of all logistic item names that we should supply
--- called once at each startup to see if the chest list changed
-function M.logistic_scan_prototypes()
-  local info = {} -- key=name, val=logistic_mode
-  -- find all with type="logistic-container" and (logistic_mode="requester" or logistic_mode="buffer")
-  for name, prot in pairs(game.get_filtered_entity_prototypes { {
-    filter = "type",
-    type = "logistic-container",
-  } }) do
-    if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
-      info[name] = prot.logistic_mode
-    end
-  end
-  return info
-end
-
 function M.is_logistic_entity(item_name)
   return global.mod.logistic_names[item_name] ~= nil
 end
@@ -459,62 +432,81 @@ function M.logistic_scan_surfaces()
   end
 end
 
+-------------------------------------------------------------------------------
+
 function M.entity_info_get(unit_number)
   return global.mod.entity_info[unit_number]
 end
 
-function M.entity_info_set(unit_number, info)
-  global.mod.entity_info[unit_number] = info
-end
-
-function M.get_logistic_entity(unit_number)
-  return global.mod.logistic[unit_number]
-end
-
-function M.logistic_add_entity(entity)
-  if global.mod.logistic[entity.unit_number] == nil then
-    global.mod.logistic[entity.unit_number] = entity
-    M.queue_insert(entity.unit_number, 0)
-    --Queue.push(global.mod.scan_queue, entity.unit_number)
+-- grab and filter
+function M.entity_info_get_type(unit_number, service_type)
+  local info = global.mod.entity_info[unit_number]
+  if info ~= nil and info.service_type == service_type then
+    return info
   end
 end
 
-function M.logistic_del(unit_number)
-  global.mod.logistic[unit_number] = nil
+function M.entity_info_set(unit_number, info)
+  info.unit_number = unit_number
+  global.mod.entity_info[unit_number] = info
 end
 
-function M.logistic_get_list()
-  return global.mod.logistic
+function M.entity_info_clear(unit_number)
+  global.mod.entity_info[unit_number] = nil
 end
+
+-------------------------------------------------------------------------------
+
+function M.get_logistic_entity(unit_number)
+  return M.entity_info_get_type(unit_number, "logistic-chest")
+end
+
+function M.logistic_add_entity(entity)
+  M.generic_add_entity(entity)
+end
+
+-- tags is a table that may contain the 'tag' field in the service_task registration
+-- for example, a chest may set: tags={ requests={...} }
+function M.generic_add_entity(entity, tags)
+  local unit_number = entity.unit_number
+  if M.entity_info_get(unit_number) == nil then
+    local info = {
+      service_type = M.get_service_type_for_entity(entity.name),
+      entity = entity,
+    }
+
+    local svc_func = M.get_service_task(info.service_type)
+    if svc_func == nil then
+      clog("genric : nothing for %s", serpent.line(info))
+    end
+if svc_func ~= nil and svc_func.tag ~= nil then
+      if tags ~= nil then
+        info[svc_func.tag] = tags[svc_func.tag] or {}
+      end
+    end
+    M.entity_info_set(unit_number, info)
+    M.queue_insert(unit_number, info)
+  end
+end
+
+-------------------------------------------------------------------------------
 
 function M.is_vehicle_entity(name)
   return name == "spidertron"
 end
 
-function M.vehicle_scan_surfaces()
+function M.spidertron_scan_surfaces()
   for _, surface in pairs(game.surfaces) do
     local entities = surface.find_entities_filtered { name = "spidertron" }
     for _, entity in ipairs(entities) do
-      M.vehicle_add_entity(entity)
+      M.spidertron_add_entity(entity)
     end
   end
 end
 
-function M.get_vehicle_entity(unit_number)
-  return global.mod.vehicles[unit_number]
-end
-
 -- add a vehicle, assume the caller knows what he is doing
-function M.vehicle_add_entity(entity)
-  if global.mod.vehicles[entity.unit_number] == nil then
-    global.mod.vehicles[entity.unit_number] = entity
-    M.queue_insert(entity.unit_number, 0)
-    --Queue.push(global.mod.scan_queue, entity.unit_number)
-  end
-end
-
-function M.vehicle_del(unit_number)
-  global.mod.vehicles[unit_number] = nil
+function M.spidertron_add_entity(entity)
+  M.generic_add_entity(entity)
 end
 
 -------------------------------------------------------------------------------
@@ -567,21 +559,15 @@ function M.service_scan_surfaces()
 end
 
 function M.get_service_entity(unit_number)
-  return global.mod.serviced[unit_number]
+  return M.entity_info_get_type(unit_number, "general-service")
 end
 
 function M.service_add_entity(entity)
-  if global.mod.serviced[entity.unit_number] == nil then
-    global.mod.serviced[entity.unit_number] = entity
-    M.queue_insert(entity.unit_number, 0)
-  end
-end
-
-function M.service_del(unit_number)
-  global.mod.serviced[unit_number] = nil
+  M.generic_add_entity(entity)
 end
 
 -------------------------------------------------------------------------------
+-- Sensors are NOT treated the same as other entities.
 
 function M.sensor_add(entity)
   global.mod.sensors[entity.unit_number] = entity
@@ -595,27 +581,10 @@ function M.sensor_get_list()
   return global.mod.sensors
 end
 
+-------------------------------------------------------------------------------
+
 function M.register_chest_entity(entity, requests)
-  if requests == nil then
-    requests = {}
-  end
-
-  if global.mod.chests[entity.unit_number] ~= nil then
-    return
-  end
-
-  M.queue_insert(entity.unit_number, 0)
-  --Queue.push(global.mod.scan_queue, entity.unit_number)
-  global.mod.chests[entity.unit_number] = {
-    entity = entity,
-    requests = requests,
-  }
-
-  global.mod.network_chest_has_been_placed = true
-end
-
-function M.delete_chest_entity(unit_number)
-  global.mod.chests[unit_number] = nil
+  M.generic_add_entity(entity, { requests = requests or {} })
 end
 
 --[[
@@ -655,27 +624,14 @@ function M.put_chest_contents_in_network(entity)
   M.put_inventory_in_network(entity.get_output_inventory())
 end
 
-function M.register_tank_entity(entity, config)
-  if global.mod.tanks[entity.unit_number] ~= nil then
-    return
-  end
-  if config == nil then
-    -- will get replaced on the first tick
-    config = {
-      type = "auto",
-     }
-  end
+-------------------------------------------------------------------------------
 
-  M.queue_insert(entity.unit_number, 0)
-  --Queue.push(global.mod.scan_queue, entity.unit_number)
-  global.mod.tanks[entity.unit_number] = {
-    entity = entity,
-    config = config,
-  }
+function M.register_tank_entity(entity, config)
+  M.generic_add_entity(entity, { config=config or { type="auto" } })
 end
 
 function M.delete_tank_entity(unit_number)
-  global.mod.tanks[unit_number] = nil
+  M.entity_info_clear(unit_number)
 end
 
 function M.put_tank_contents_in_network(entity)
@@ -689,28 +645,47 @@ function M.put_tank_contents_in_network(entity)
   entity.clear_fluid_inside()
 end
 
-function M.get_chest_info(unit_number)
-  return global.mod.chests[unit_number]
+function M.put_contents_in_network(entity)
+  -- drain any fluid
+  local fluidbox = entity.fluidbox
+  for idx = 1, #fluidbox do
+    local fluid = fluidbox[idx]
+    if fluid ~= nil then
+      M.increment_fluid_count(fluid.name, fluid.temperature, fluid.amount)
+    end
+  end
+  entity.clear_fluid_inside()
+
+  -- return any inventory
+  for idx = 1, entity.get_max_inventory_index() do
+    M.put_inventory_in_network(entity.get_output_inventory(idx))
+  end
 end
 
-function M.get_chests()
-  return global.mod.chests
+
+-- grab the entity info and ensure that it is
+function M.get_chest_info(unit_number)
+  return M.entity_info_get_type(unit_number, "network-chest")
 end
 
 function M.get_tank_info(unit_number)
-  return global.mod.tanks[unit_number]
+  return M.entity_info_get_type(unit_number, "network-tank")
 end
 
 function M.copy_chest_requests(source_unit_number, dest_unit_number)
-  -- REVISIT: creating two chests with the same requests field. Intentional?
-  global.mod.chests[dest_unit_number].requests =
-    global.mod.chests[source_unit_number].requests
+  local src_info = M.get_chest_info(source_unit_number)
+  local dst_info = M.get_chest_info(dest_unit_number)
+  if src_info ~= nil and dst_info ~= nil then
+    dst_info.requests = table.deepcopy(src_info.requests)
+  end
 end
 
 function M.copy_tank_config(source_unit_number, dest_unit_number)
-  -- REVISIT: creating two tanks with the same config field. Intentional?
-  global.mod.tanks[dest_unit_number].config =
-    global.mod.tanks[source_unit_number].config
+  local src_info = M.get_tank_info(source_unit_number)
+  local dst_info = M.get_tank_info(dest_unit_number)
+  if src_info ~= nil and dst_info ~= nil then
+    dst_info.config = table.deepcopy(src_info.config)
+  end
 end
 
 function M.set_chest_requests(unit_number, requests)
@@ -718,8 +693,10 @@ function M.set_chest_requests(unit_number, requests)
   if info == nil then
     return
   end
-  global.mod.chests[unit_number].requests = requests
+  info.requests = requests
 end
+
+-------------------------------------------------------------------------------
 
 function M.get_item_count(item_name)
   return global.mod.items[item_name] or 0
@@ -809,7 +786,7 @@ end
 M.UPDATE_STATUS = {
   INVALID        = nil, -- causes the entity to be removed
   UPDATE_PRI_INC  = -1, -- entity needed service
-  UPDATE_PRI_SAME = 0,  -- entity needed service
+  UPDATE_PRI_SAME = 0,  -- entity needed service, but current pri is OK
   UPDATE_PRI_DEC  = 1,  -- entity did not need service
   UPDATE_PRI_MAX  = constants.QUEUE_COUNT - 1,
   -- aliases
@@ -818,40 +795,6 @@ M.UPDATE_STATUS = {
   UPDATE_VEHICLE  = constants.QUEUE_COUNT - 1,
   NOT_UPDATED     = constants.QUEUE_COUNT - 1,
 }
-
-function M.update_queue(update_entity)
-  local MAX_ENTITIES_TO_UPDATE = settings.global
-    ["item-network-number-of-entities-per-tick"]
-    .value
-  local updated_entities = {}
-
-  local function inner_update_entity(unit_number)
-    if updated_entities[unit_number] ~= nil then
-      return M.UPDATE_STATUS.ALREADY_UPDATED
-    end
-    updated_entities[unit_number] = true
-
-    return update_entity(unit_number)
-  end
-
-  for _ = 1, MAX_ENTITIES_TO_UPDATE do
-    local unit_number = Queue.pop(global.mod.scan_queue)
-    if unit_number == nil then
-      break
-    end
-
-    local status = inner_update_entity(unit_number)
-    if status == M.UPDATE_STATUS.NOT_UPDATED or
-       status == M.UPDATE_STATUS.UPDATED or
-       status == M.UPDATE_STATUS.ALREADY_UPDATED
-    then
-      Queue.push(global.mod.scan_queue, unit_number)
-    end
-  end
-
-  -- finally, swap a random entity to the front of the queue to introduce randomness in update order.
-  --Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
-end
 
 -- translate a tile name to the item name ("stone-path" => "stone-brick")
 function M.resolve_name(name)
@@ -887,121 +830,35 @@ function M.resolve_name(name)
   return nil
 end
 
-function M.update_queue_log()
-  clog("item-network queue sizes: active: %s  inactive: %s", global.mod.scan_queue.size, global.mod.scan_queue_inactive.size)
-end
+-------------------------------------------------------------------------------
 
-function M.update_queue_dual(update_entity)
-  local MAX_ENTITIES_TO_UPDATE = settings.global
-    ["item-network-number-of-entities-per-tick"]
-    .value
-  local updated_entities = {}
+M.service_tasks = {}
 
-  -- peek the first entry. If we haven't processed it, then pop and return it.
-  local function pop_from_q(q)
-    local unum = Queue.get_front(q)
-    if unum ~= nil and updated_entities[unum] == nil then
-      updated_entities[unum] = true
-      return Queue.pop(q)
-    end
-    return nil
+-- Register a service task.
+function M.register_service_task(service_type, funcs)
+  if funcs == nil or funcs.create == nil or funcs.service == nil then
+    assert(false, string.format("register_service_task: incorrect usage %s", serpent.line(funcs)))
   end
-
-  local toggle = true
-  for _ = 1, MAX_ENTITIES_TO_UPDATE do
-    local unit_number
-    if toggle then
-      unit_number = pop_from_q(global.mod.scan_queue)
-      if unit_number == nil then
-        unit_number = pop_from_q(global.mod.scan_queue_inactive)
-        if unit_number == nil then
-          break
-        end
-      end
-    else
-      unit_number = pop_from_q(global.mod.scan_queue_inactive)
-      if unit_number == nil then
-        unit_number = pop_from_q(global.mod.scan_queue)
-        if unit_number == nil then
-          break
-        end
-      end
-    end
-    toggle = not toggle
-
-    local status = update_entity(unit_number)
-    if status == M.UPDATE_STATUS.UPDATED then
-      Queue.push(global.mod.scan_queue, unit_number)
-    elseif status == M.UPDATE_STATUS.NOT_UPDATED then
-      Queue.push(global.mod.scan_queue_inactive, unit_number)
-    end
+  M.service_tasks[service_type] = funcs
+  clog("added service %s", service_type)
+  for k, v in pairs(funcs) do
+    clog('  - %s : %s', k, type(v))
   end
 end
 
-function M.update_queue_multi(update_entity)
-  local weight_fast = 10
-  local weight_med = 6
-  local weight_slow = 4
-  local MAX_ENTITIES_TO_UPDATE = (weight_fast + weight_med + weight_slow)
-  local updated_entities = {}
-
-  local function inner_update_entity(unit_number)
-    if updated_entities[unit_number] ~= nil then
-      return M.UPDATE_STATUS.ALREADY_UPDATED
-    end
-    updated_entities[unit_number] = true
-    return update_entity(unit_number)
+function M.get_service_task(service_type)
+  local retval = M.service_tasks[service_type or ""]
+  if retval == nil then
+    clog("get_service_task: nothing for %s", service_type)
   end
+  return retval
+end
 
-  for _ = 1, MAX_ENTITIES_TO_UPDATE do
-    local unit_number
-    if weight_slow > 0 then
-      weight_slow = weight_slow - 1
-      unit_number = Queue.pop(global.mod.scan_queue_slow)
-    end
-    if unit_number == nil and weight_med > 0 then
-      weight_med = weight_med - 1
-      unit_number = Queue.pop(global.mod.scan_queue_med)
-    end
-    if unit_number == nil then
-      unit_number = Queue.pop(global.mod.scan_queue_fast)
-    end
-    if unit_number == nil then
-      unit_number = Queue.pop(global.mod.scan_queue_med)
-    end
-    if unit_number == nil then
-      unit_number = Queue.pop(global.mod.scan_queue_slow)
-    end
-    if unit_number == nil then
-      break
-    end
-
-    local status = inner_update_entity(unit_number)
-    if status == M.UPDATE_STATUS.NOT_UPDATED or
-       status == M.UPDATE_STATUS.UPDATED or
-       status == M.UPDATE_STATUS.ALREADY_UPDATED
-    then
-      -- update service_count
-      local service_count = global.mod.entity_service_counts[unit_number] or 0
-      if status == M.UPDATE_STATUS.NOT_UPDATED then
-        service_count = service_count - 1
-      elseif status == M.UPDATE_STATUS.UPDATED  then
-        service_count = math.max(0, service_count) + 1
-      end
-      global.mod.entity_service_counts[unit_number] = service_count
-
-      if service_count >= 2 then
-        Queue.push(global.mod.scan_queue_fast, unit_number)
-      elseif service_count < -60 then
-        Queue.push(global.mod.scan_queue_slow, unit_number)
-      else
-        Queue.push(global.mod.scan_queue_med, unit_number)
-      end
-    end
+function M.get_service_type_for_entity(name)
+  if global.name_service_map == nil then
+    error("called before init: get_service_type_for_entity")
   end
-
-  -- finally, swap a random entity to the front of the queue to introduce randomness in update order.
-  --Queue.swap_random_to_front(global.mod.scan_queue, global.mod.rand)
+  return global.name_service_map[name]
 end
 
 --[[
@@ -1009,17 +866,19 @@ end
   0 is the highest priority and will put the entity in the next queue slot.
   The largest value (lowest priority) is (constants.QUEUE_COUNT - 1).
   That will put the entity in the previous queue slot.
+  Uses (info.service_priority or 0) as the priority.
 ]]
-function M.queue_insert(unit_number, priority)
+function M.queue_insert(unit_number, info)
   -- clamp priority to 0..QUEUE_COUNT-2 (inclusive)
-  priority = math.max(0, math.min(priority, constants.QUEUE_COUNT - 2))
+  local priority = math.max(0, math.min(info.service_priority or 0, constants.QUEUE_COUNT - 2))
 
   -- q_idx is where to put it, Priority 0 => scan_index + 1
   -- scan_index is 1-based, so we subtract 1 and then add 1 (scan_index - 1 + 1 + priority)
   local q_idx = 1 + (global.mod.scan_index + priority) % constants.QUEUE_COUNT
-  global.mod.scan_queues[q_idx][unit_number] = priority
-
+  global.mod.scan_queues[q_idx][unit_number] = info
   --print(string.format("[%s] ADD  q %s unum %s si=%s p=%s qx=%s", game.tick, q_idx, unit_number, global.mod.scan_index, priority, constants.QUEUE_COUNT))
+
+  info.service_priority = priority
 end
 
 --[[
@@ -1029,7 +888,7 @@ is processed on the next tick.
 
 The function is passed in to avoid circular dependencies.
 ]]
-function M.update_queue_lists(update_entity)
+function M.queue_service()
   local MAX_ENTITIES_TO_UPDATE = settings.global
     ["item-network-number-of-entities-per-tick"]
     .value
@@ -1038,11 +897,17 @@ function M.update_queue_lists(update_entity)
   local q_idx = global.mod.scan_index or 1
   if q_idx < 1 or q_idx > #qs then
     q_idx = 1
+    global.mod.scan_index = q_idx
+    if global.mod.scan_queue_start_tick ~= nil then
+      local dt = game.tick - global.mod.scan_queue_start_tick
+      --clog("queue complete in %.1f sec (%s ticks)", dt / 60, dt)
+    end
+    global.mod.scan_queue_start_tick = game.tick
   end
   local q = qs[q_idx]
 
   for _ = 1, MAX_ENTITIES_TO_UPDATE do
-    local unit_number, old_pri = next(q)
+    local unit_number, info = next(q)
     if unit_number == nil then
       -- nothing to process in this queue. step to the next one if past the deadline
       if game.tick >= (global.mod.scan_deadline or 0) then
@@ -1052,19 +917,87 @@ function M.update_queue_lists(update_entity)
       end
       return
     end
+    -- remove from the active queue
     q[unit_number] = nil
     --print(string.format("[%s] PROC q %s unum=%s pri=%s", game.tick, q_idx, unit_number, old_pri))
 
-    -- the UPDATE_STATUS are actually relative priorities.
-    local pri_adj = update_entity(unit_number, old_pri)
-    -- nil means entity is invalid.
-    if pri_adj ~= nil then
-      M.queue_insert(unit_number, old_pri + pri_adj)
+    if type(info) == "number" then
+      local pri = info
+      info = M.entity_info_get(unit_number)
+      if info ~= nil then
+        info.service_priority = pri
+      end
+    end
+
+    if info ~= nil and info.entity ~= nil and info.entity.valid then
+      if info.entity.to_be_deconstructed() then
+        -- we don't remove or servive to-be-deconstructed entities
+        info.service_priority = M.UPDATE_STATUS.NOT_UPDATED
+        M.queue_insert(unit_number, info)
+
+      else
+        -- Would be really nice to cache this lookup, but can't store functions in save file.
+        local func = M.get_service_task(info.service_type)
+        if func == nil then
+          clog("service: nothing for %s", serpent.line(info))
+        end
+        if func ~= nil and func.service ~= nil then
+          -- the UPDATE_STATUS values are relative priorities.
+          local pri_adj = func.service(info)
+          if pri_adj ~= nil then
+            if info.service_tick ~= nil then
+              info.service_tick_delta = game.tick - info.service_tick
+            end
+            info.service_tick = game.tick
+
+            info.service_priority = (info.service_priority or 0) + pri_adj
+            M.queue_insert(unit_number, info)
+          end
+        else
+          clog("WARNING: no handler for [%s] - dropped", serpent.line(info))
+          for k, _ in pairs(M.service_tasks) do
+            clog("avail: %s", k)
+          end
+        end
+      end
     end
   end
 end
 
-M.update_queue = M.update_queue_lists
+-- grab the priority for the entity from the service queues
+function M.get_priority(unit_number)
+  for _, qq in ipairs(global.mod.scan_queues) do
+    local pri = qq[unit_number]
+    if pri ~= nil then
+      return pri
+    end
+  end
+end
+
+-- create a histogram of priorities
+function M.get_priority_histogram()
+  local h = {} -- key=pri, val=count
+  for _, qq in ipairs(global.mod.scan_queues) do
+    for _, pri in pairs(qq) do
+      h[pri] = (h[pri] or 0) + 1
+    end
+  end
+  return h
+end
+
+function M.log_queue_info()
+  local h = M.get_priority_histogram()
+  clog("priority hist: %s", serpent.line(h))
+
+  local qs = global.mod.scan_queues
+  local cnt = 0
+  for idx = 1, #qs do
+    local ts = table_size(qs[idx])
+    clog("queue %s: size=%s", idx, ts)
+    cnt = cnt + ts
+  end
+  clog("total %s", cnt)
+end
 
 function M.log_entity(title, entity)
   if entity ~= nil then
@@ -1077,6 +1010,7 @@ function M.log_entity(title, entity)
     end
   end
 end
+
 
 --[[
 Automatically configure a chest to request ingredients needed for linked assemblers.
@@ -1169,5 +1103,225 @@ function M.auto_network_chest(entity)
   -- REVISIT: do we need to scan for loaders?
   return requests, provides
 end
+
+function M.get_fuel_table()
+  if global.fuel_table == nil then
+    local fuels = {} -- array { name=name, val=energy per stack, cat=category }
+      for _, prot in pairs(game.item_prototypes) do
+        local fc = prot.fuel_category
+        if fc ~= nil then
+          table.insert(fuels, { name=prot.name, val=prot.stack_size * prot.fuel_value, cat=fc })
+        end
+      end
+    table.sort(fuels, function (a, b) return a.val > b.val end)
+
+    print(string.format("fuel table: %s", serpent.line(fuels)))
+    global.fuel_table = fuels
+  end
+  return global.fuel_table
+end
+
+function M.get_best_available_fuel(entity)
+  --clog("called get best fuel on %s", entity.name)
+  local bprot = entity.prototype.burner_prototype
+  if bprot ~= nil then
+    local fct = bprot.fuel_categories
+    --clog("  fuel cat: %s", serpent.line(fct))
+    local ff = M.get_fuel_table()
+    --clog("  fuel tab: %s", serpent.line(ff))
+    for _, fuel in ipairs(ff) do
+      if fct[fuel.cat] ~= nil then
+        local n_avail = M.get_item_count(fuel.name)
+        if n_avail > 0 then
+          --clog("FUEL: %s can use %s and we have %s", entity.name, fuel.name, n_avail)
+          return fuel.name, n_avail
+        end
+        --clog("FUEL: %s can use %s, but we are out", entity.name, fuel.name)
+      end
+    end
+  end
+  return nil
+end
+
+local function recurse_find_damage(tab)
+  if tab.type == 'damage' and tab.damage ~= nil then
+    return tab.damage
+  end
+  for k, v in pairs(tab) do
+    if type(v) == 'table' then
+      local rv = recurse_find_damage(v)
+      if rv ~= nil then
+        return rv
+      end
+    end
+  end
+  return nil
+end
+
+--[[
+Collect a decreasing list of ammos byte damage / type.
+]]
+function M.get_ammo_table()
+  if global.ammo_table == nil then
+    local ammo_list = {}
+    for _, prot in pairs(game.item_prototypes) do
+      if prot.type == "ammo" then
+        local at = prot.get_ammo_type()
+        if at ~= nil then
+          local damage = recurse_find_damage(at.action)
+          if damage ~= nil and type(damage.amount) == "number" then
+            local xx = ammo_list[at.category]
+            if xx == nil then
+              xx = {}
+              ammo_list[at.category] = xx
+            end
+            table.insert(xx, { name=prot.name, amount=damage.amount })
+          end
+        end
+      end
+    end
+    for k, xx in pairs(ammo_list) do
+      table.sort(xx, function (a, b) return a.amount > b.amount end)
+    end
+
+    -- reduce to a list of names
+    local ammo_table = {}
+    for cat, xxx in pairs(ammo_list) do
+      local aa = {}
+      ammo_table[cat] = aa
+      for _, row in ipairs(xxx) do
+        table.insert(aa, row.name)
+      end
+    end
+
+    -- hard code some projectile stuff that I haven't figured out how to detect
+    ammo_table['cannon-shell'] = {
+      "explosive-uranium-cannon-shell",
+      "explosive-cannon-shell",
+      "cannon-shell"
+    }
+
+    ammo_table['flamethrower'] = { "flamethrower-ammo" }
+
+    print(string.format("ammo table: %s", serpent.line(ammo_table)))
+    global.ammo_table = ammo_table
+  end
+  return global.ammo_table
+end
+
+--[[
+Grab the best ammo for the category.
+@category is typically one of "bullet", "rocket", "flamethrower", etc
+]]
+function M.get_best_available_ammo(category)
+  -- haven't figured out a good way to do anything other than bullets
+  local ammo_list = M.get_ammo_table()[category]
+  if ammo_list ~= nil then
+    for _, ammo_name in ipairs(ammo_list) do
+      local n_avail = M.get_item_count(ammo_name)
+      if n_avail > 0 then
+        clog("AMMO: %s can use %s and we have %s", category, ammo_name, n_avail)
+        return ammo_name, n_avail
+      end
+      clog("AMMO: %s can use %s, but we are out", category, ammo_name)
+    end
+  else
+    clog("no ammo list for cat %s", category)
+  end
+end
+
+function M.last_service_set(unit_number)
+  global.mod.last_service[unit_number] = game.tick
+end
+
+function M.last_service_get(unit_number)
+  return global.mod.last_service[unit_number] or 0
+end
+
+function M.last_service_clear(unit_number)
+  global.mod.last_service[unit_number] = nil
+end
+
+-------------------------------------------------------------------------------
+
+function M.scan_prototypes()
+   -- key=entity_name, val=service_type
+  local name_to_service = {
+    -- add built-in stuff
+    ["network-chest"]           = "network-chest",
+    ["network-chest-provider"]  = "network-chest-provider",
+    ["network-chest-requester"] = "network-chest-requester",
+    ["network-tank"]            = "network-tank",
+    ["network-tank-provider"]   = "network-tank-provider",
+    ["network-tank-requester"]  = "network-tank-requester",
+    ["spidertron"]              = "spidertron",
+  }
+
+  local type_to_service = {
+    ["spider-vehicle"]     = "spidertron",
+    ["car"]                = "general-service", -- "car",
+    ["furnace"]            = "general-service", -- "furnace",
+    ["assembling-machine"] = "general-service", -- "assembling-machine",
+    ["ammo-turret"]        = "general-service", -- "ammo-turret",
+    ["artillery-turret"]   = "general-service", -- "artillery-turret",
+    ["burner-generator"]   = "general-service", -- "burner-generator",
+  }
+
+  for _, prot in pairs(game.entity_prototypes) do
+    if prot.type == "logistic-container" then
+      if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
+        name_to_service[prot.name] = "logistic-chest-" .. prot.logistic_mode
+      end
+    else
+      local ss = type_to_service[prot.type]
+      if ss ~= nil then
+        name_to_service[prot.name] = ss
+      else
+        -- check for a 'general-service'
+        local add_it = false
+        if prot.has_flag("player-creation") then
+          -- check for stuff that burns coal
+          if prot.burner_prototype ~= nil and prot.burner_prototype.fuel_categories.chemical == true then
+            add_it = true -- refueling
+          elseif prot.name == "burner-lab" or prot.name == "burner-inserter" then
+            add_it = true
+          end
+        end
+        if add_it then
+          name_to_service[prot.name] = "general-service"
+        end
+      end
+    end
+  end
+  return name_to_service
+end
+
+-- called once at startup if scan_prototypes() returns something different
+function M.scan_surfaces()
+  clog("IN: Scanning surface...")
+  local name_filter = {}
+  for name, _ in pairs(global.name_service_map) do
+    table.insert(name_filter, name)
+  end
+  for _, surface in pairs(game.surfaces) do
+    local entities = surface.find_entities_filtered { name = name_filter }
+    for _, ent in ipairs(entities) do
+      M.generic_add_entity(ent)
+    end
+  end
+end
+
+-------------------------------------------------------------------------------
+
+-- not sure this belongs here...
+Event.on_configuration_changed(function ()
+  -- need to rescan the fuel table
+  global.ammo_table = nil
+  global.fuel_table = nil
+end)
+
+-- need to run as soon as 'game' is available
+Event.on_nth_tick(1, M.setup)
+--Event.on_init(M.setup)
 
 return M

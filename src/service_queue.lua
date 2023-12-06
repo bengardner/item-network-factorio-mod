@@ -430,9 +430,9 @@ end
 
 --[[
 This is the handler for the "new" provider-only chest.
-Sends everything to the network. No bars, filter, etc.
+Sends everything to the network. No bars, filter, limit, etc.
 ]]
-local function update_network_chest_provider(info)
+local function update_network_chest_provider_old(info)
   -- default to bulk if there is nothing to transfer or the network is full
   local status = GlobalState.UPDATE_STATUS.UPDATE_BULK
 
@@ -466,6 +466,31 @@ local function update_network_chest_provider(info)
   end
 
   return status
+end
+
+local function update_network_chest_provider(info)
+  local inv = info.entity.get_output_inventory()
+  local contents = inv.get_contents()
+  local n_empty = inv.count_empty_stacks(false, false)
+
+  inv.clear()
+
+  -- move everything we can to the network
+  for item, count in pairs(contents) do
+    if count > 0 then
+      GlobalState.increment_item_count(item, count)
+    end
+  end
+
+  if n_empty == 0 then
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_INC * 5
+  elseif n_empty < 2 then
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+  elseif n_empty > 4 then
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+  else
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
+  end
 end
 
 --[[
@@ -602,6 +627,7 @@ local function paste_network_chest(dst_info, source)
   end
 end
 
+--[[
 local function paste_network_chest_provider(dst_info, source)
   local dest = dst_info.entity
   if source.type == "assembling-machine" then
@@ -646,6 +672,7 @@ local function paste_network_chest_provider(dst_info, source)
     end
   end
 end
+]]
 
 -------------------------------------------------------------------------------
 
@@ -854,11 +881,11 @@ GlobalState.register_service_task("network-chest", {
   clone=clone_network_chest,
   tag="requests",
 })
--- provider has no extra data. just filters and a bar, which is already managed.
+-- provider has no extra data, filters or bar.
 GlobalState.register_service_task("network-chest-provider", {
   service=service_network_chest_provider,
   create=create_network_chest,
-  paste=paste_network_chest_provider,
+  -- paste=paste_network_chest_provider,
 })
 GlobalState.register_service_task("network-chest-requester", {
   service=service_network_chest_requester,

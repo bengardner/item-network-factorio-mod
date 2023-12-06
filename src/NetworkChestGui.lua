@@ -56,6 +56,7 @@ function M.on_gui_opened(player, chest_entity)
 
 M.log_chest_state(chest_entity, chest_info)
 
+--[[
   if #requests == 0 then
     M.add_autochest_element(chest_entity, chest_info, requests_scroll)
   else
@@ -63,7 +64,7 @@ M.log_chest_state(chest_entity, chest_info)
       M.add_request_element(request, requests_scroll)
     end
   end
-
+]]
   -- edit window
   local edit_flow = requests_flow.add({
     type = "flow",
@@ -139,12 +140,14 @@ M.log_chest_state(chest_entity, chest_info)
   M.refresh_request_panel(ui.network_chest)
 end
 
+
 function M.refresh_request_panel(network_chest)
   network_chest.requests_scroll.clear()
 
   if #network_chest.requests == 0 then
     M.add_autochest_element(network_chest.chest_entity, network_chest.chest_info, network_chest.requests_scroll)
   else
+    M.balance_requests(network_chest.requests)
     for _, request in ipairs(network_chest.requests) do
       M.add_request_element(request, network_chest.requests_scroll)
     end
@@ -772,6 +775,60 @@ function Modal.try_to_auto(player_index)
 ]]
 end
 
+--[[
+Round-robin, adding one slot per request until either the buffer
+amount is satisfied or we run out of slots.
+]]
+function M.balance_requests(requests)
+  local old_req = {} -- consume 'buffer' from this one
+  local new_req = {} -- add 'buffer' to this one
+  for _, rr in pairs(requests) do
+    local prot = game.item_prototypes[rr.item]
+    old_req[rr.item] = { type=rr.type, item=rr.item, buffer=rr.buffer, stack_size=prot.stack_size }
+    new_req[rr.item] = { type=rr.type, item=rr.item, buffer=0, stack_size=prot.stack_size }
+  end
+  clog("balance before: %s", serpent.line(requests))
+  local used_slots = 0
+  while used_slots < Constants.NUM_INVENTORY_SLOTS do
+    local added = false
+    for _, rr in pairs(old_req) do
+      if used_slots >= Constants.NUM_INVENTORY_SLOTS then
+        break
+      end
+      local nn = new_req[rr.item]
+      --clog("process: [%s/%s] %s => %s", used_slots, Constants.NUM_INVENTORY_SLOTS, serpent.line(rr), serpent.line(nn))
+      if rr.type == "take" then
+        if rr.buffer > 0 then
+          used_slots = used_slots + 1
+          local amt = math.min(rr.buffer, rr.stack_size)
+          rr.buffer = rr.buffer - amt
+          nn.buffer = nn.buffer + amt
+          added = true
+        end
+      else -- "give" -- requires 1+buffer
+        if rr.buffer >= 0 then
+          used_slots = used_slots + 1
+          nn.buffer = nn.buffer + math.min(rr.buffer, rr.stack_size)
+          rr.buffer = rr.buffer - rr.stack_size
+          added = true
+        end
+      end
+    end
+    if not added or used_slots == Constants.NUM_INVENTORY_SLOTS then
+      break
+    end
+  end
+  for _, rr in pairs(requests) do
+    local xx = new_req[rr.item]
+    rr.buffer = xx.buffer
+  end
+  clog("balance after: used=[%s]", used_slots)
+  for _, rr in pairs(requests) do
+    local nn = old_req[rr.item]
+    clog(" - [%s] item=%s buffer=%s [%s]", rr.type, rr.item, rr.buffer, math.ceil(rr.buffer / nn.stack_size))
+  end
+end
+
 function Modal.try_to_confirm(player_index)
   local player = game.get_player(player_index)
   local ui = GlobalState.get_ui_state(player_index)
@@ -802,11 +859,14 @@ function Modal.try_to_confirm(player_index)
     if (
         modal_type == "add"
         or modal_type == "edit" and request.id ~= request_id
-      ) and request.item == item then
+      ) and request.item == item
+    then
+      clog("request for %s exists in %s", item, serpent.line(request))
       return
     end
   end
 
+--[[
   -- make sure request size does not exceed chest size
   local used_slots = 0
   for _, request in ipairs(chest_ui.requests) do
@@ -814,12 +874,15 @@ function Modal.try_to_confirm(player_index)
     local slots = math.max(1, math.ceil(request.buffer / stack_size))
     used_slots = used_slots + slots
   end
-  assert(used_slots <= Constants.NUM_INVENTORY_SLOTS)
+  if (used_slots > Constants.NUM_INVENTORY_SLOTS) then
+    clog("used_slots %s > max %s : req=%s", used_slots, Constants.NUM_INVENTORY_SLOTS, serpent.line(chest_ui.requests))
+  end
   local new_inv_slots = math.ceil(buffer /
     game.item_prototypes[item].stack_size)
-  if used_slots + new_inv_slots > Constants.NUM_INVENTORY_SLOTS then
-    return
-  end
+  --if used_slots + new_inv_slots > Constants.NUM_INVENTORY_SLOTS then
+  --  return
+  --end
+]]
 
   if modal_type == "add" then
     local request = {
@@ -830,7 +893,7 @@ function Modal.try_to_confirm(player_index)
       limit = limit,
     }
     table.insert(chest_ui.requests, request)
-    M.add_request_element(request, chest_ui.requests_scroll)
+    --M.add_request_element(request, chest_ui.requests_scroll)
   elseif modal_type == "edit" then
     local request = M.get_request_by_id(player,
       request_id
@@ -841,9 +904,11 @@ function Modal.try_to_confirm(player_index)
       request.buffer = buffer
       request.limit = limit
     end
-    local request_elem = chest_ui.requests_scroll[request_id]
-    M.update_request_element(request, request_elem)
+    --local request_elem = chest_ui.requests_scroll[request_id]
+    --M.update_request_element(request, request_elem)
   end
+
+  --M.balance_requests(chest_ui.requests)
 
   M.refresh_request_panel(chest_ui)
 
@@ -906,6 +971,7 @@ function M.on_chest_request_update(event, element)
     limit = limit,
   }
   table.insert(chest_ui.requests, request)
+  M.balance_requests(chest_ui.requests)
   M.refresh_request_panel(chest_ui)
 end
 

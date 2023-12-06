@@ -1,5 +1,8 @@
 if script.active_mods["gvv"] then require("__gvv__.gvv")() end
 
+-- declare global
+clog = require("src.log_console").log
+
 -- need to register for on_tick() first
 require "src.GlobalState"
 

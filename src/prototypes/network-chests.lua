@@ -25,9 +25,11 @@ local function add_chest(variant)
   entity.icon = Paths.graphics .. "/icons/network-chest-" .. variant .. ".png"
 
   -- update inventory
-  entity.inventory_size = 39 -- constants.NUM_INVENTORY_SLOTS
-  entity.inventory_type = "with_filters_and_bar"
-
+  entity.inventory_size = 40 -- constants.NUM_INVENTORY_SLOTS
+  -- no filters
+  -- entity.inventory_type = "with_filters_and_bar"
+  entity.inventory_type = "with_bar"
+  entity.enable_inventory_bar = false
 
   -- create the item
   local item = table.deepcopy(data.raw["item"][override_item_name])

@@ -34,6 +34,12 @@ function M.main()
       setting_type = "runtime-global",
       default_value = true,
     },
+    {
+      type = "bool-setting",
+      name = "item-network-service-assemblers",
+      setting_type = "runtime-global",
+      default_value = false,
+    },
   })
 end
 

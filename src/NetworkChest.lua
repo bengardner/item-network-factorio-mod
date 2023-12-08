@@ -23,7 +23,7 @@ local function generic_create_handler(event)
   end
   local service_type = GlobalState.get_service_type_for_entity(entity.name)
   if service_type == nil then
-    clog("created unhandled %s [%s] %s", entity.name, entity.type, entity.unit_number)
+    --clog("created unhandled %s [%s] %s", entity.name, entity.type, entity.unit_number)
     return
   end
 
@@ -33,7 +33,7 @@ local function generic_create_handler(event)
     return
   end
 
-  clog("generic_create_handler [%s] => %s", entity.name, serpent.line(svc_func))
+  --clog("generic_create_handler [%s] => %s", entity.name, serpent.line(svc_func))
   if type(svc_func.create) == "function" then
     svc_func.create(entity, event.tags)
   else
@@ -308,7 +308,7 @@ local function update_network_chest_requester(info)
           -- it may not fit in the chest due to other reasons
           n_transfer = inv.insert({name=req.item, count=n_transfer})
           if n_transfer > 0 then
-            status = GlobalState.UPDATE_STATUS.UPDATED
+            status = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
             GlobalState.set_item_count(req.item, n_innet - n_transfer)
 
             --[[ If we filled the entire buffer AND there is enough in the net for another buffer, then

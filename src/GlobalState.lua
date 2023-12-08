@@ -17,6 +17,7 @@ function M.setup()
   end
   setup_has_run = true
 
+  clog("*** SETUP ***")
   M.inner_setup()
 end
 
@@ -107,7 +108,7 @@ function M.inner_setup()
   if global.mod.scan_queues == nil or (#global.mod.scan_queues ~= constants.QUEUE_COUNT) then
     M.reset_queues()
   end
-  M.log_queue_info()
+  -- M.log_queue_info()
 
   M.remove_old_ui()
   if global.mod.player_info == nil then
@@ -129,6 +130,7 @@ function M.inner_setup()
   end
   local name_service_map = M.scan_prototypes()
   if not tables_have_same_keys(name_service_map, global.name_service_map) then
+    clog("*** PROTOTYPES CHANGED ***")
     global.name_service_map = name_service_map
     M.scan_surfaces()
   end
@@ -669,7 +671,10 @@ function M.get_chest_info(unit_number)
 end
 
 function M.get_tank_info(unit_number)
-  return M.entity_info_get_type(unit_number, "network-tank")
+  local info = M.entity_info_get(unit_number)
+  if info ~= nil and constants.NETWORK_TANK_NAMES[info.service_type] ~= nil then
+    return info
+  end
 end
 
 function M.copy_chest_requests(source_unit_number, dest_unit_number)
@@ -930,7 +935,10 @@ function M.queue_service()
     end
 
     if info ~= nil and info.entity ~= nil and info.entity.valid then
-      if info.entity.to_be_deconstructed() then
+      if global.name_service_map[info.entity.name] == nil then
+        clog("NOTE: no longer processing [%s] - dropped", info.entity.name)
+
+      elseif info.entity.to_be_deconstructed() then
         -- we don't remove or servive to-be-deconstructed entities
         info.service_priority = M.UPDATE_STATUS.NOT_UPDATED
         M.queue_insert(unit_number, info)
@@ -1261,11 +1269,14 @@ function M.scan_prototypes()
     ["spider-vehicle"]     = "spidertron",
     ["car"]                = "general-service", -- "car",
     ["furnace"]            = "general-service", -- "furnace",
-    ["assembling-machine"] = "general-service", -- "assembling-machine",
     ["ammo-turret"]        = "general-service", -- "ammo-turret",
     ["artillery-turret"]   = "general-service", -- "artillery-turret",
     ["burner-generator"]   = "general-service", -- "burner-generator",
   }
+
+  if settings.global["item-network-service-assemblers"].value then
+    type_to_service["assembling-machine"] = "general-service" -- "assembling-machine"
+  end
 
   for _, prot in pairs(game.entity_prototypes) do
     if prot.type == "logistic-container" then
@@ -1315,9 +1326,11 @@ end
 
 -- not sure this belongs here...
 Event.on_configuration_changed(function ()
+  clog("*** CONFIGURATION CHANGED ***")
   -- need to rescan the fuel table
   global.ammo_table = nil
   global.fuel_table = nil
+
 end)
 
 -- need to run as soon as 'game' is available

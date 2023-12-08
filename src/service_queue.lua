@@ -4,6 +4,7 @@ local tabutils = require("src.tables_have_same_keys")
 local NetworkTankAutoConfig = require("src.NetworkTankAutoConfig")
 local ServiceEntity = require("src.ServiceEntity")
 local clog = require("src.log_console").log
+local constants = require("src.constants")
 
 
 -- fulfill requests. entity must have request_slot_count and get_request_slot()
@@ -329,11 +330,11 @@ local function update_network_chest_configured_common(info, inv, contents)
             requesting enough. Up the buffer size by 1.
             ]]
             if n_transfer == n_want then
-              clog('chest increasing request freq pri=%s', info.service_priority)
+              --clog('chest increasing request freq pri=%s', info.service_priority)
               status = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
               if info.service_priority < 2 and n_innet > n_transfer * 4 then
                 req.buffer = req.buffer + 1
-                clog('chest increasing request buffer =%s', req.buffer)
+                --clog('chest increasing request buffer =%s', req.buffer)
               end
             end
           end
@@ -721,12 +722,20 @@ local function update_tank(info)
         GlobalState.increment_fluid_count(fluid_instance.name,
           fluid_instance.temperature, n_removed)
 
-        -- sent something, so raise the priority
-        return GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+        if n_transfer > constants.MAX_TANK_SIZE * 0.75 then
+          -- sent more than 75% of the tank, so raise the priority
+          return GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+        elseif n_transfer < constants.MAX_TANK_SIZE * 0.25 then
+          -- sent less than 25% of the tank, so lower the priority
+          return GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+        else
+          -- between 25-75%. still good.
+          return GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
+        end
       end
     end
     -- did not send anything, so lower the priority
-    return GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
 
   -- We are requesting fluid FROM the network

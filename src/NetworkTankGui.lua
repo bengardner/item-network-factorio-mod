@@ -455,7 +455,11 @@ Event.on_event(
       local val = Constants.NETWORK_TANK_NAMES[event.entity.name]
       if val ~= nil then
         local entity = event.entity
-        assert(GlobalState.get_tank_info(entity.unit_number) ~= nil)
+        local info = GlobalState.get_tank_info(entity.unit_number)
+        if info == nil then
+          clog("No tank info for [%s] %s", entity.unit_number, entity.name)
+          return
+        end
         local player = game.get_player(event.player_index)
         if player == nil then
           return

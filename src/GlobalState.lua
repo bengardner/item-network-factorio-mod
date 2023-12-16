@@ -17,7 +17,7 @@ function M.setup()
   end
   setup_has_run = true
 
-  clog("*** SETUP ***")
+  -- clog("*** ietm-network SETUP ***")
   M.inner_setup()
 end
 
@@ -84,10 +84,16 @@ Everything starts at priotirty 0 when created/added.
     }
  ]]
 
+--[[
+This is called once at startup/load.
+It should set up the global data structure.
+]]
 function M.inner_setup()
+  -- always rebuild the ammo and fuel tables (for now)
   global.ammo_table = nil
   global.fuel_table = nil
 
+  -- the 'mod' table holds most interesting data
   if global.mod == nil then
     global.mod = {
       rand = game.create_random_generator(),
@@ -96,20 +102,19 @@ function M.inner_setup()
     }
   end
 
-  if global.service_names ~= nil then
-    global.service_names = nil -- undo mistake -- called name_service_map, below
-  end
-
+  -- create the table for entity_info
   if global.mod.entity_info == nil then
     -- random info that is automatically removed when the entity is destroyed
     global.mod.entity_info = {} -- key=unit_number, val=table
   end
 
+  -- reset the service queue if the size changes or this is the first call
   if global.mod.scan_queues == nil or (#global.mod.scan_queues ~= constants.QUEUE_COUNT) then
     M.reset_queues()
   end
   -- M.log_queue_info()
 
+  -- remove any player UIs, as those really shouldn't be saved
   M.remove_old_ui()
   if global.mod.player_info == nil then
     global.mod.player_info = {}
@@ -125,17 +130,19 @@ function M.inner_setup()
     global.mod.missing_fluid = {} -- missing_fluid[key][unit_number] = { game.tick, count }
   end
 
-  if global.mod.logistic_names == nil then
-    global.mod.logistic_names = {} -- key=item name, val=logistic_mode from prototype
+  if global.mod.logistic_names ~= nil then
+    global.mod.logistic_names = nil -- clean up
   end
+
+  -- scan prototypes to see if we need to rescan all surfaces
   local name_service_map = M.scan_prototypes()
-  if not tables_have_same_keys(name_service_map, global.name_service_map) then
+  if true or not tables_have_same_keys(name_service_map, global.name_service_map) then
     clog("*** PROTOTYPES CHANGED ***")
     global.name_service_map = name_service_map
     M.scan_surfaces()
   end
 
-  -- major upgrade to unified entity info table
+  -- major upgrade to unified entity info table, trashes all the separate tables
   if global.mod.chests ~= nil then
     M.convert_to_entity_info()
   end
@@ -147,12 +154,14 @@ function M.inner_setup()
   if global.mod.sensors == nil then
     global.mod.sensors = {}
   end
-
-  -- TEST: reset the queues; causes desync in multiplayer
-  --M.reset_queues()
 end
 
-local function generic_add_entity(entity, info)
+--[[
+Creates a new entity from an entity and tags table.
+Calls the create() method for the entity.
+That ends up calling M.entity_info_add().
+]]
+local function generic_create_entity(entity, info)
   if entity ~= nil and entity.valid then
     local service_type = M.get_service_type_for_entity(entity.name)
     if service_type == nil then
@@ -169,7 +178,9 @@ local function generic_add_entity(entity, info)
   end
 end
 
-
+--[[
+Converts the previous data style to one unified entity_info table.
+]]
 function M.convert_to_entity_info()
   --[[
       {
@@ -191,7 +202,7 @@ function M.convert_to_entity_info()
   -- chests need a 'service_type' field
   for unum, info in pairs(global.mod.chests or {}) do
     if info.entity ~= nil and info.entity.valid then
-      generic_add_entity(info.entity, info)
+      generic_create_entity(info.entity, info)
     end
   end
   global.mod.chests = nil
@@ -199,24 +210,24 @@ function M.convert_to_entity_info()
   -- tanks need a 'service_type' field
   for unum, info in pairs(global.mod.tanks or {}) do
     if info.entity ~= nil and info.entity.valid then
-      generic_add_entity(info.entity, info)
+      generic_create_entity(info.entity, info)
     end
   end
   global.mod.tanks = nil
 
   -- vehicles was misnamed, as it only handles the spidertron
   for unum, ent in pairs(global.mod.vehicles or {}) do
-    generic_add_entity(ent)
+    generic_create_entity(ent)
   end
   global.mod.vehicles = nil
 
   for unum, ent in pairs(global.mod.logistic or {}) do
-    generic_add_entity(ent)
+    generic_create_entity(ent)
   end
   global.mod.logistic = nil
 
   for unum, ent in pairs(global.mod.serviced or {}) do
-    generic_add_entity(ent)
+    generic_create_entity(ent)
   end
   global.mod.serviced = nil
 
@@ -224,7 +235,7 @@ function M.convert_to_entity_info()
 end
 
 function M.reset_queues()
-  print("RESET SCAN QUEUE")
+  print("item-network: RESET SCAN QUEUE")
   global.mod.scan_deadline = 0 -- keep doing nothing until past this tick
   global.mod.scan_index = 1 -- working on the queue in this index
 
@@ -237,20 +248,18 @@ function M.reset_queues()
   -- add all entities, spreading them evenly
   local pri = 0
   for unum, info in pairs(global.mod.entity_info) do
-    info.service_priority = pri
-    M.queue_insert(unum, info)
-    pri = pri + 1
-    if pri > constants.QUEUE_COUNT - 2 then
-      pri = 0
+    local entity = info.entity
+    if entity ~= nil and entity.valid then
+      if M.get_service_type_for_entity(entity.name) ~= nil then
+        info.service_priority = pri
+        M.queue_insert(unum, info)
+        pri = pri + 1
+        if pri > constants.QUEUE_COUNT - 2 then
+          pri = 0
+        end
+      end
     end
   end
-end
-
-local function str_endswith(text, tag)
-  if type(text) == "string" and type(tag) == "string" then
-    return #tag <= #text and string.sub(text, 1 + #text - #tag) == tag
-  end
-  return false
 end
 
 function M.get_limits()
@@ -287,6 +296,8 @@ end
 function M.get_insert_count(item_name)
   return math.max(0, M.get_limit(item_name) - M.get_item_count(item_name))
 end
+
+-------------------------------------------------------------------------------
 
 -- store the missing item: mtab[item_name][unit_number] = { game.tick, count }
 local function missing_set(mtab, item_name, unit_number, count)
@@ -362,6 +373,8 @@ function M.missing_fluid_filter()
   return missing_filter(global.mod.missing_fluid)
 end
 
+-------------------------------------------------------------------------------
+
 function M.remove_old_ui()
   if global.mod.network_chest_gui ~= nil then
     global.mod.network_chest_gui = nil
@@ -378,6 +391,8 @@ function M.remove_old_ui()
     end
   end
 end
+
+-------------------------------------------------------------------------------
 
 -- this tracks that we already transferred an item for the request
 function M.alert_transfer_set(unit_number)
@@ -404,34 +419,14 @@ function M.alert_transfer_cleanup()
   end
 end
 
+-------------------------------------------------------------------------------
+
 function M.rand_hex(len)
   local chars = {}
   for _ = 1, len do
     table.insert(chars, string.format("%x", math.floor(global.mod.rand() * 16)))
   end
   return table.concat(chars, "")
-end
-
-function M.is_logistic_entity(item_name)
-  return global.mod.logistic_names[item_name] ~= nil
-end
-
-function M.get_logistic_mode(item_name)
-  return global.mod.logistic_names[item_name]
-end
-
--- called once at startup if the logistc entity prototype list changed
-function M.logistic_scan_surfaces()
-  local name_filter = {}
-  for name, _ in pairs(global.mod.logistic_names) do
-    table.insert(name_filter, name)
-  end
-  for _, surface in pairs(game.surfaces) do
-    local entities = surface.find_entities_filtered { name = name_filter }
-    for _, ent in ipairs(entities) do
-      M.logistic_add_entity(ent)
-    end
-  end
 end
 
 -------------------------------------------------------------------------------
@@ -457,115 +452,47 @@ function M.entity_info_clear(unit_number)
   global.mod.entity_info[unit_number] = nil
 end
 
--------------------------------------------------------------------------------
-
-function M.get_logistic_entity(unit_number)
-  return M.entity_info_get_type(unit_number, "logistic-chest")
-end
-
-function M.logistic_add_entity(entity)
-  M.generic_add_entity(entity)
-end
-
--- tags is a table that may contain the 'tag' field in the service_task registration
--- for example, a chest may set: tags={ requests={...} }
-function M.generic_add_entity(entity, tags)
+-- handles adding a new entity for nearly all types.
+function M.entity_info_add(entity, tags)
+  if entity == nil or not entity.valid then
+    return
+  end
   local unit_number = entity.unit_number
-  if M.entity_info_get(unit_number) == nil then
-    local info = {
-      service_type = M.get_service_type_for_entity(entity.name),
+  if unit_number == nil then
+    return
+  end
+  local service_type = M.get_service_type_for_entity(entity.name)
+  if service_type == nil then
+    return
+  end
+-- only if we haven't already added this one
+  local info = M.entity_info_get(unit_number)
+  if info == nil then
+    -- grab the service_type. bail if not handled.
+
+    info = {
+      service_type = service_type,
       entity = entity,
     }
 
-    local svc_func = M.get_service_task(info.service_type)
+    local svc_func = M.get_service_task(service_type)
     if svc_func == nil then
       clog("genric : nothing for %s", serpent.line(info))
     end
-if svc_func ~= nil and svc_func.tag ~= nil then
+    if svc_func ~= nil and svc_func.tag ~= nil then
       if tags ~= nil then
         info[svc_func.tag] = tags[svc_func.tag] or {}
       end
     end
     M.entity_info_set(unit_number, info)
     M.queue_insert(unit_number, info)
-  end
-end
-
--------------------------------------------------------------------------------
-
-function M.is_vehicle_entity(name)
-  return name == "spidertron"
-end
-
-function M.spidertron_scan_surfaces()
-  for _, surface in pairs(game.surfaces) do
-    local entities = surface.find_entities_filtered { name = "spidertron" }
-    for _, entity in ipairs(entities) do
-      M.spidertron_add_entity(entity)
+  else
+    if info.service_type ~= service_type then
+      clog("changed service type on %s from %s to %s", entity.name, info.service_type, service_type)
+      info.service_type = service_type
     end
   end
-end
-
--- add a vehicle, assume the caller knows what he is doing
-function M.spidertron_add_entity(entity)
-  M.generic_add_entity(entity)
-end
-
--------------------------------------------------------------------------------
-
-function M.get_service_names()
-  if global.service_names_table == nil then
-    global.service_names_table = {}
-  end
-  if next(global.service_names_table) == nil then
-    -- add refuel targets (coal/chemical only) and assemblers
-    for _, prot in pairs(game.entity_prototypes) do
-      local add_it = false
-      if prot.has_flag("player-creation") then
-        -- check for stuff that burns coal
-        if prot.burner_prototype ~= nil and prot.burner_prototype.fuel_categories.chemical == true then
-          add_it = true
-        elseif prot.type == "assembling-machine" or prot.type == "furnace" then
-          add_it = true
-        elseif prot.type == "ammo-turret" or prot.type == "artillery-turret" then
-          add_it = true
-        elseif prot.name == "burner-lab" or prot.name == "burner-inserter" or prot.type == "burner-generator" then
-          add_it = true
-        end
-      end
-      if add_it then
-        global.service_names_table[prot.name] = { not prot.is_building, false }
-      end
-    end
-    --clog("service_names = %s", serpent.line(global.service_names_table))
-  end
-  return global.service_names_table
-end
-
-function M.is_service_entity(name)
-  return M.get_service_names()[name] ~= nil
-end
-
-function M.service_scan_surfaces()
-  local names = {}
-  for n, _ in pairs(M.get_service_names()) do
-    table.insert(names, n)
-  end
-
-  for _, surface in pairs(game.surfaces) do
-    local entities = surface.find_entities_filtered { name = names }
-    for _, entity in ipairs(entities) do
-      M.service_add_entity(entity)
-    end
-  end
-end
-
-function M.get_service_entity(unit_number)
-  return M.entity_info_get_type(unit_number, "general-service")
-end
-
-function M.service_add_entity(entity)
-  M.generic_add_entity(entity)
+  return info
 end
 
 -------------------------------------------------------------------------------
@@ -586,7 +513,7 @@ end
 -------------------------------------------------------------------------------
 
 function M.register_chest_entity(entity, requests)
-  M.generic_add_entity(entity, { requests = requests or {} })
+  M.entity_info_add(entity, { requests = requests or {} })
 end
 
 --[[
@@ -629,7 +556,7 @@ end
 -------------------------------------------------------------------------------
 
 function M.register_tank_entity(entity, config)
-  M.generic_add_entity(entity, { config=config or { type="auto" } })
+  M.entity_info_add(entity, { config=config or { type="auto" } })
 end
 
 function M.delete_tank_entity(unit_number)
@@ -839,10 +766,45 @@ end
 
 M.service_tasks = {}
 
--- Register a service task.
+--[[
+Register a service task.
+
+@service_type is the name to register.
+@funcs is a table that provides the service info.
+
+@funcs.service(info) -- required
+  Does whatever needs to be done to service the entity.
+
+@funcs.create(entity, tags) -- optional
+  This should do whatever needs to be done to create the data for the entity
+  and then call GlobalState.entity_info_add(entity, tags).
+  The default is to just call GlobalState.entity_info_add(entity, tags).
+  If funcs.tag is defined, entity_info_add() will copy that from tags.
+    info[funcs.tag] = tags[funcs.tag]
+  The default is usually good enough.
+
+@funcs.clone(dst_info, src_info) -- optional
+  Copy the required data from src_info to dst_info.
+  This is called to handler pasting between same-name entities.
+  If funcs.tag is set, then the default is to do a table.deepcopy().
+     dst_info[funcs.tag] = table.deepcopy(src_info[funcs.tag])
+
+@funcs.tag
+  The name of the member that holds the configuration table.
+
+@funcs.paste(dst_info, src_entity) -- optional
+  Handles pasting from src_entity to dst_info.
+  This is only called if clone() was not defined or the entities have different names.
+  This handles stuff like pasting a assembler to a chest.
+]]
 function M.register_service_task(service_type, funcs)
-  if funcs == nil or funcs.create == nil or funcs.service == nil then
+  -- "service" is required or what is the point?
+  if funcs == nil or funcs.service == nil then
     assert(false, string.format("register_service_task: incorrect usage %s", serpent.line(funcs)))
+  end
+  -- entity_info_add() suffices for just about everything
+  if funcs.create == nil then
+    funcs.create = M.entity_info_add
   end
   M.service_tasks[service_type] = funcs
   clog("added service %s", service_type)
@@ -884,6 +846,18 @@ function M.queue_insert(unit_number, info)
   --print(string.format("[%s] ADD  q %s unum %s si=%s p=%s qx=%s", game.tick, q_idx, unit_number, global.mod.scan_index, priority, constants.QUEUE_COUNT))
 
   info.service_priority = priority
+end
+
+--[[
+Remove unit_number from all queues.
+Should only be used when re-scanning and NOT resetting queues.
+]]
+function M.queue_remove(unit_number)
+  if unit_number ~= nil then
+    for _, qq in ipairs(global.mod.scan_queues) do
+      qq[unit_number] = nil
+    end
+  end
 end
 
 --[[
@@ -1211,6 +1185,8 @@ function M.get_ammo_table()
 
     ammo_table['flamethrower'] = { "flamethrower-ammo" }
 
+    ammo_table['artillery-shell'] = { "artillery-shell" }
+
     print(string.format("ammo table: %s", serpent.line(ammo_table)))
     global.ammo_table = ammo_table
   end
@@ -1228,10 +1204,10 @@ function M.get_best_available_ammo(category)
     for _, ammo_name in ipairs(ammo_list) do
       local n_avail = M.get_item_count(ammo_name)
       if n_avail > 0 then
-        clog("AMMO: %s can use %s and we have %s", category, ammo_name, n_avail)
+        -- clog("AMMO: %s can use %s and we have %s", category, ammo_name, n_avail)
         return ammo_name, n_avail
       end
-      clog("AMMO: %s can use %s, but we are out", category, ammo_name)
+      -- clog("AMMO: %s can use %s, but we are out", category, ammo_name)
     end
   else
     clog("no ammo list for cat %s", category)
@@ -1253,53 +1229,58 @@ end
 -------------------------------------------------------------------------------
 
 function M.scan_prototypes()
+  clog("item-network: scanning prototypes")
+
    -- key=entity_name, val=service_type
   local name_to_service = {
-    -- add built-in stuff
+    -- add built-in stuff that we create
     ["network-chest"]           = "network-chest",
     ["network-chest-provider"]  = "network-chest-provider",
     ["network-chest-requester"] = "network-chest-requester",
     ["network-tank"]            = "network-tank",
     ["network-tank-provider"]   = "network-tank-provider",
     ["network-tank-requester"]  = "network-tank-requester",
-    ["spidertron"]              = "spidertron",
   }
 
+  -- key=type, val=service_type
   local type_to_service = {
     ["spider-vehicle"]     = "spidertron",
     ["car"]                = "general-service", -- "car",
-    ["furnace"]            = "general-service", -- "furnace",
+    ["furnace"]            = "furnace", -- "furnace",
     ["ammo-turret"]        = "general-service", -- "ammo-turret",
     ["artillery-turret"]   = "general-service", -- "artillery-turret",
-    ["burner-generator"]   = "general-service", -- "burner-generator",
   }
 
   if settings.global["item-network-service-assemblers"].value then
+    clog("Adding 'assembling-machine' to the list")
     type_to_service["assembling-machine"] = "general-service" -- "assembling-machine"
   end
 
   for _, prot in pairs(game.entity_prototypes) do
     if prot.type == "logistic-container" then
-      if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
-        name_to_service[prot.name] = "logistic-chest-" .. prot.logistic_mode
-      end
+      --if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
+      name_to_service[prot.name] = "logistic-chest-" .. prot.logistic_mode
+      --elseif prot.logistic_mode == "active-provider" then
+      --  name_to_service[prot.name] = "logistic-chest-provider"
+      --else
+      --  clog("logistic_mode: %s %s", prot.logistic_mode, prot.name)
+      --end
     else
       local ss = type_to_service[prot.type]
       if ss ~= nil then
         name_to_service[prot.name] = ss
       else
-        -- check for a 'general-service'
-        local add_it = false
+        -- check for other 'general-service'
+        local svc_type
         if prot.has_flag("player-creation") then
-          -- check for stuff that burns coal
+          -- check for stuff that burns chemicals (coal)
           if prot.burner_prototype ~= nil and prot.burner_prototype.fuel_categories.chemical == true then
-            add_it = true -- refueling
-          elseif prot.name == "burner-lab" or prot.name == "burner-inserter" then
-            add_it = true
+            svc_type = "general-service" -- for refueling
+            --clog("Adding %s based on burner_prototype", prot.name)
           end
         end
-        if add_it then
-          name_to_service[prot.name] = "general-service"
+        if svc_type ~= nil then
+          name_to_service[prot.name] = svc_type
         end
       end
     end
@@ -1309,7 +1290,7 @@ end
 
 -- called once at startup if scan_prototypes() returns something different
 function M.scan_surfaces()
-  clog("IN: Scanning surface...")
+  clog("[%s] item-network: Scanning surfaces", game.tick)
   local name_filter = {}
   for name, _ in pairs(global.name_service_map) do
     table.insert(name_filter, name)
@@ -1317,20 +1298,21 @@ function M.scan_surfaces()
   for _, surface in pairs(game.surfaces) do
     local entities = surface.find_entities_filtered { name = name_filter }
     for _, ent in ipairs(entities) do
-      M.generic_add_entity(ent)
+      M.entity_info_add(ent)
     end
   end
+  M.reset_queues()
+  clog("[%s] item-network: Scanning complete", game.tick)
 end
 
 -------------------------------------------------------------------------------
 
 -- not sure this belongs here...
 Event.on_configuration_changed(function ()
-  clog("*** CONFIGURATION CHANGED ***")
+  clog("item-network: *** CONFIGURATION CHANGED ***")
   -- need to rescan the fuel table
   global.ammo_table = nil
   global.fuel_table = nil
-
 end)
 
 -- need to run as soon as 'game' is available

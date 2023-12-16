@@ -332,7 +332,8 @@ local function update_network_chest_configured_common(info, inv, contents)
             if n_transfer == n_want then
               --clog('chest increasing request freq pri=%s', info.service_priority)
               status = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
-              if info.service_priority < 2 and n_innet > n_transfer * 4 then
+              --if info.service_priority < 2 and n_innet > n_transfer * 4 then
+              if n_innet > n_transfer * 4 then
                 req.buffer = req.buffer + 1
                 --clog('chest increasing request buffer =%s', req.buffer)
               end
@@ -575,7 +576,8 @@ local function paste_network_chest(dst_info, source)
       dst_info.requests = table.deepcopy(src_info.requests)
     end
 
-  elseif source.type == "assembling-machine" then
+  elseif source.type == "assembling-machine" or source.type == "rocket-silo" then
+    -- anything with a recipe
     local recipe = source.get_recipe()
     if recipe ~= nil then
       local requests = {}
@@ -794,8 +796,41 @@ local function service_network_tank(info)
 end
 
 local function service_network_tank_provider(info)
-  -- TODO: simplified function
-  return update_tank(info)
+  -- move all fluid into the network
+  local fluid_instance = info.entity.fluidbox[1]
+  if fluid_instance ~= nil then
+    local current_count = GlobalState.get_fluid_count(
+      fluid_instance.name,
+      fluid_instance.temperature
+    )
+    local key = GlobalState.fluid_temp_key_encode(fluid_instance.name, fluid_instance.temperature)
+    local gl_limit = GlobalState.get_limit(key)
+    local n_give = math.max(0, fluid_instance.amount)          -- how much we want to give
+    local n_take = math.max(0, gl_limit - current_count)       -- how much the network can take
+    local n_transfer = math.min(n_give, n_take)
+    if n_transfer > 0 then
+      local n_removed = info.entity.remove_fluid({
+        name = fluid_instance.name,
+        temperature = fluid_instance.temperature,
+        amount = n_transfer,
+      })
+      GlobalState.increment_fluid_count(fluid_instance.name,
+        fluid_instance.temperature, n_removed)
+
+      if n_transfer > constants.MAX_TANK_SIZE * 0.75 then
+        -- sent more than 75% of the tank, so raise the priority
+        return GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+      elseif n_transfer < constants.MAX_TANK_SIZE * 0.25 then
+        -- sent less than 25% of the tank, so lower the priority
+        return GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+      else
+        -- between 25-75%. still good.
+        return GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
+      end
+    end
+  end
+  -- did not send anything, so lower the priority
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
 local function service_network_tank_requester(info)
@@ -823,6 +858,7 @@ end
 
 -- handles logistic storage chests
 local function service_logistic_chest_storage(info)
+  -- clog("[%s] storage [%s] %s", game.tick, info.entity.unit_number, info.entity.name)
   if not settings.global["item-network-enable-logistic-chest"].value then
     return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
@@ -834,8 +870,9 @@ local function service_logistic_chest_storage(info)
     if info.contents == nil then
       info.contents = new_contents
       info.contents_tick = game.tick
-      return
+      return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
     end
+    -- clog("storage [%s] has %s", info.entity.unit_number, serpent.line(new_contents))
 
     if tabutils.tables_have_same_counts(new_contents, info.contents) then
       local tick_delta = game.tick - (info.contents_tick or game.tick)
@@ -869,15 +906,29 @@ local function service_logistic_chest_requester(info)
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
+local function service_logistic_chest_active_provider(info)
+  if settings.global["item-network-enable-logistic-chest"].value then
+    return update_network_chest_provider(info)
+    --GlobalState.items_inv_to_net(info.entity.get_output_inventory())
+  end
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+end
+
+local function service_logistic_chest_passive_provider(info)
+  if settings.global["item-network-enable-logistic-chest"].value then
+    GlobalState.items_inv_to_net_with_limits(info.entity.get_output_inventory())
+  end
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+end
 
 --------------------
 
 local function create_logistic_chest(entity, tags)
-  GlobalState.logistic_add_entity(entity)
+  GlobalState.entity_info_add(entity)
 end
 
 local function create_spidertron(entity, tags)
-  GlobalState.spidertron_add_entity(entity)
+  GlobalState.entity_info_add(entity)
 end
 
 -------------------------------------------------------------------------------
@@ -934,6 +985,14 @@ GlobalState.register_service_task("logistic-chest-buffer", {
 GlobalState.register_service_task("logistic-chest-storage", {
   create=create_logistic_chest,
   service=service_logistic_chest_storage
+})
+GlobalState.register_service_task("logistic-chest-active-provider", {
+  create=create_logistic_chest,
+  service=service_logistic_chest_active_provider
+})
+GlobalState.register_service_task("logistic-chest-passive-provider", {
+  create=create_logistic_chest,
+  service=service_logistic_chest_passive_provider
 })
 
 GlobalState.register_service_task("spidertron", {

@@ -158,6 +158,10 @@ function M.auto_config(entity)
     return -- nil
   end
 
+  if entity.name == 'network-tank-provider' then
+
+  end
+
   if debug_fluids then
     clog("[%s] auto config %s @ %s", entity.unit_number, entity.name, serpent.line(entity.position))
   end

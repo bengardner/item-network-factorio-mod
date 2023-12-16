@@ -54,7 +54,7 @@ function M.on_gui_opened(player, chest_entity)
   })
   requests_scroll.style.size = { width = width - 30, height = height - 160 }
 
-M.log_chest_state(chest_entity, chest_info)
+  -- M.log_chest_state(chest_entity, chest_info)
 
 --[[
   if #requests == 0 then
@@ -787,7 +787,7 @@ function M.balance_requests(requests)
     old_req[rr.item] = { type=rr.type, item=rr.item, buffer=rr.buffer, stack_size=prot.stack_size }
     new_req[rr.item] = { type=rr.type, item=rr.item, buffer=0, stack_size=prot.stack_size }
   end
-  clog("balance before: %s", serpent.line(requests))
+  --clog("balance before: %s", serpent.line(requests))
   local used_slots = 0
   while used_slots < Constants.NUM_INVENTORY_SLOTS do
     local added = false
@@ -822,11 +822,13 @@ function M.balance_requests(requests)
     local xx = new_req[rr.item]
     rr.buffer = xx.buffer
   end
+  --[[
   clog("balance after: used=[%s]", used_slots)
   for _, rr in pairs(requests) do
     local nn = old_req[rr.item]
     clog(" - [%s] item=%s buffer=%s [%s]", rr.type, rr.item, rr.buffer, math.ceil(rr.buffer / nn.stack_size))
   end
+  ]]
 end
 
 function Modal.try_to_confirm(player_index)

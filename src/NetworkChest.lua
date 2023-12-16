@@ -216,33 +216,17 @@ function M.on_player_setup_blueprint(event)
   end
 
   for _, entity in ipairs(entities) do
-    if entity.name == "network-chest" then
-      local real_entity = event.surface.find_entity(
-        "network-chest",
-        entity.position
-      )
-      if real_entity ~= nil then
-        local chest_info = GlobalState.get_chest_info(real_entity.unit_number)
-        if chest_info ~= nil then
+    -- clog("blueprint: [%s] %s @ %s", entity.entity_number, entity.name, serpent.line(entity.position))
+    local real_entity = event.surface.find_entity(entity.name, entity.position)
+    if real_entity ~= nil then
+      local info = GlobalState.entity_info_get(real_entity.unit_number)
+      if info ~= nil then
+        local svc_func = GlobalState.get_service_task(info.service_type)
+        if svc_func ~= nil and svc_func.tag ~= nil then
           blueprint.set_blueprint_entity_tag(
             entity.entity_number,
-            "requests",
-            chest_info.requests
-          )
-        end
-      end
-    elseif constants.NETWORK_TANK_NAMES[entity.name] ~= nil then
-      local real_entity = event.surface.find_entity(
-        entity.name,
-        entity.position
-      )
-      if real_entity ~= nil then
-        local tank_info = GlobalState.get_tank_info(real_entity.unit_number)
-        if tank_info ~= nil and tank_info.config ~= nil then
-          blueprint.set_blueprint_entity_tag(
-            entity.entity_number,
-            "config",
-            tank_info.config
+            svc_func.tag,
+            info[svc_func.tag]
           )
         end
       end
@@ -253,6 +237,8 @@ end
 function M.on_entity_settings_pasted(event)
   local source = event.source
   local dest = event.destination
+
+  -- clog("PASTE! %s", serpent.line(event))
 
   -- See if we manage the destination entity
   local dst_info = GlobalState.entity_info_get(dest.unit_number)
@@ -268,10 +254,14 @@ function M.on_entity_settings_pasted(event)
   end
 
   -- see if we can promote this to a clone op
-  if source.name == dest.name and type(dst_func.clone) == "function" then
+  if source.name == dest.name then
     local src_info = GlobalState.entity_info_get(source.unit_number)
     if src_info ~= nil then
-      dst_func.clone(dst_info, src_info)
+      if type(dst_func.clone) == "function" then
+        dst_func.clone(dst_info, src_info)
+      elseif dst_func.tag ~= nil then
+        dst_info[dst_func.tag] = table.deepcopy(src_info[dst_func.tag] or {})
+      end
       return
     end
   end
@@ -521,5 +511,15 @@ Event.on_event(
   "in_cancel_dialog",
   M.in_cancel_dialog
 )
+--[[
+local function on_player_fast_transferred(event)
+  clog("on_player_fast_transferred: %s from+player=%s is_split=%s", event.entity.name, event.from_player, event.is_split)
+end
+
+Event.on_event(
+  defines.events.on_player_fast_transferred,
+  on_player_fast_transferred
+)
+]]
 
 return M

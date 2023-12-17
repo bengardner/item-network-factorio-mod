@@ -245,6 +245,30 @@ function M.update_entity(info)
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
+-- determine the ore based on the inputs, last_recipe or info.ore_name
+function M.furnace_get_ore(info)
+  local entity = info.entity
+  local src_inv = entity.get_inventory(defines.inventory.furnace_source)
+
+  -- check input inventory (ore)
+  for item, _ in pairs(src_inv.get_contents()) do
+    info.ore_name = item
+    return item
+  end
+
+  -- check previous recipe (check output)
+  local recipe = entity.previous_recipe
+  if recipe ~= nil then
+    for _, ing in ipairs(recipe.ingredients) do
+      info.ore_name = ing.name
+      return ing.name
+    end
+  end
+
+  -- go with whatever was last configured (inputs and outputs are empty)
+  return info.ore_name
+end
+
 function M.furnace_update(info)
   local entity = info.entity
 
@@ -253,40 +277,37 @@ function M.furnace_update(info)
   local o_inv = entity.get_output_inventory()
   local inv_src = entity.get_inventory(defines.inventory.furnace_source)
 
-  -- add input ore
-  local ore_name = info.ore_name
-  for item, _ in pairs(inv_src.get_contents()) do
-    ore_name = item
-    break
-  end
-  if info.ore_name ~= ore_name then
-    -- forcibly remove output, as the input changed
-    GlobalState.items_inv_to_net(o_inv)
-    info.ore_name = ore_name
-  else
-    -- remove output with limits
-    GlobalState.items_inv_to_net_with_limits(o_inv)
-    if not o_inv.is_empty() then
-      local name = next(o_inv.get_contents())
-      -- clog("[%s][%s @ %s] not empty after output clear: %s ore=%s",
-      --   entity.unit_number, entity.name, serpent.line(entity.position), name, ore_name)
-      if name ~= nil then
-        local ore_ok = false
-        -- output is full. Force clear if ore_name is not an ingredient
-        local recipe = game.recipe_prototypes[name]
-        if recipe ~= nil then
-          -- clog("ing %s", serpent.line(recipe.ingredients))
+  -- grab the configured ore and the input ore
+  local old_ore = info.ore_name
+  local ore_name = M.furnace_get_ore(info)
 
-          for _, ing in ipairs(recipe.ingredients) do
-            if ing.name == ore_name then
-              ore_ok = true
-            end
+  -- forcibly remove output if the ore changed
+  if ore_name ~= old_ore then
+    GlobalState.items_inv_to_net(o_inv)
+
+  elseif not o_inv.is_empty() then
+
+    -- force-dump the output if the ore isn't an ingredient to the output item
+    local name = next(o_inv.get_contents())
+    if name ~= nil then
+      local ore_ok = false
+      -- output is full. Force clear if ore_name is not an ingredient
+      local recipe = game.recipe_prototypes[name]
+      if recipe ~= nil then
+        -- clog("ing %s", serpent.line(recipe.ingredients))
+        for _, ing in ipairs(recipe.ingredients) do
+          if ing.name == ore_name then
+            ore_ok = true
           end
         end
-        if not ore_ok then
-          -- clog("force-dump on recipe change")
-          GlobalState.items_inv_to_net(o_inv)
-        end
+      end
+
+      if ore_ok then
+        -- remove output with limits
+        GlobalState.items_inv_to_net_with_limits(o_inv)
+      else
+        -- force dump on ore change
+        GlobalState.items_inv_to_net(o_inv)
       end
     end
   end
@@ -330,50 +351,53 @@ local function furnace_paste(dst_info, source)
   --[[
   When pasting, we can only go off of the inventory in the source.
   ]]
+  -- we only handle same-type pasting (furnace to furnace).
   local dest = dst_info.entity
-  if dest.type == "furnace" and source.type == "furnace" then
-    local src_inv = source.get_inventory(defines.inventory.furnace_source)
-    local ore_name
-
-    -- grab ore_name from the source contents
-    for name, _ in pairs(src_inv.get_contents()) do
-      ore_name = name
-      break
-    end
-
-    -- OK. try grabbing ore_name from the source info
-    if ore_name == nil then
-      local src_info = GlobalState.entity_info_get(source.unit_number)
-      if src_info ~= nil then
-        ore_name = src_info.ore_name
-      end
-    end
-
-    if ore_name == nil or dst_info.ore_name == ore_name then
-      return
-    end
-
-    --clog("paste[%s @ %s][%s] changed ore from %s to %s",
-    --  dest.name, serpent.line(dest.position), dest.unit_number,
-    --  serpent.line(dst_info.ore_name), ore_name)
-    dst_info.ore_name = ore_name
-
-    -- clear out the input and output inventories
-    local dst_ing_inv = dest.get_inventory(defines.inventory.furnace_source)
-    GlobalState.items_inv_to_net(dst_ing_inv)
-    GlobalState.items_inv_to_net(dest.get_output_inventory())
-
-    -- add some ore to lock in the change
-    --local ss = game.item_prototypes[ore_name].stack_size
-    transfer_item_to_inv_max(dest, dst_ing_inv, ore_name)
-    -- NOTE: there may still be something smelting. handle that later.
+  if dest.type ~= source.type then
+    return
   end
+
+  -- we have to know about the source
+  local src_info = GlobalState.entity_info_get(source.unit_number)
+  if src_info == nil then
+    -- clog("paste: no source info")
+    return
+  end
+
+  -- determine the ore -- the furnace may not have been serviced since placing ore
+  local ore_name = M.furnace_get_ore(src_info)
+  if ore_name == nil or dst_info.ore_name == ore_name then
+    return
+  end
+
+  -- ore_name changed: update the ore_name in the dest
+  dst_info.ore_name = ore_name
+
+  -- clog("paste: ore=%s", serpent.line(dst_info.ore_name))
+
+  -- force-dump existing ingredients and output
+  local dst_ing_inv = dest.get_inventory(defines.inventory.furnace_source)
+  GlobalState.items_inv_to_net(dst_ing_inv)
+  GlobalState.items_inv_to_net(dest.get_output_inventory())
+
+  -- max out the input ore
+  transfer_item_to_inv_max(dest, dst_ing_inv, ore_name)
+
+  -- NOTE: if the furnace was smelting something, we will have to
+  -- purge that from the service routine.
 end
 
 local function furnace_clone(dst_info, src_info)
   -- We want to fill the furnace immediately, so hook into paste without
   -- changing dst_info.ore_name first
   furnace_paste(dst_info, src_info.entity)
+end
+
+local function furnace_refresh_tags(info)
+  if info.ore_name == nil then
+    info.ore_name = M.furnace_get_ore(info)
+  end
+  return info.ore_name
 end
 
 function M.create(entity, tags)
@@ -390,6 +414,7 @@ GlobalState.register_service_task("furnace", {
   create=M.create,
   service=M.furnace_update,
   paste=furnace_paste,
+  refresh_tags=furnace_refresh_tags,
   clone=furnace_clone,
   tag="ore_name",
 })

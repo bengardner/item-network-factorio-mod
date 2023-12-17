@@ -792,6 +792,9 @@ Register a service task.
 @funcs.tag
   The name of the member that holds the configuration table.
 
+@funcs.refresh_tags(info)
+  Called to refresh the tags right before copying them for a blueprint.
+
 @funcs.paste(dst_info, src_entity) -- optional
   Handles pasting from src_entity to dst_info.
   This is only called if clone() was not defined or the entities have different names.

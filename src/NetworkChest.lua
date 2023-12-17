@@ -223,6 +223,9 @@ function M.on_player_setup_blueprint(event)
       if info ~= nil then
         local svc_func = GlobalState.get_service_task(info.service_type)
         if svc_func ~= nil and svc_func.tag ~= nil then
+          if type(svc_func.refresh_tags) == "function" then
+            svc_func.refresh_tags(info)
+          end
           blueprint.set_blueprint_entity_tag(
             entity.entity_number,
             svc_func.tag,

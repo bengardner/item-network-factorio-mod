@@ -9,6 +9,7 @@ local M = {}
 
 M.get_default_limit = require("src.DefaultLimits").get_default_limit
 
+local infinite_supply = true
 local setup_has_run = false
 
 function M.setup()
@@ -267,7 +268,10 @@ function M.get_limits()
 end
 
 function M.get_limit(item_name)
-  return global.mod.item_limits[item_name] or M.get_default_limit(item_name)
+  if infinite_supply then
+    return constants.UNLIMITED
+  end
+  return global.mod.item_limits[item_name] or M.get_default_limit(item_name) or constants.UNLIMITED
 end
 
 function M.clear_limit(item_name)
@@ -651,7 +655,12 @@ function M.get_fluids()
 end
 
 function M.set_item_count(item_name, count)
-  if count <= 0 then
+  if infinite_supply then
+    local old_count = global.mod.items[item_name] or 0
+    if count > old_count then
+      global.mod.items[item_name] = count
+    end
+  elseif count <= 0 then
     global.mod.items[item_name] = nil
   else
     global.mod.items[item_name] = count
@@ -659,15 +668,20 @@ function M.set_item_count(item_name, count)
 end
 
 function M.set_fluid_count(fluid_name, temp, count)
-  if count <= 0 then
-    global.mod.fluids[fluid_name][temp] = nil
-  else
-    local fluid_temps = global.mod.fluids[fluid_name]
-    if fluid_temps == nil then
-      fluid_temps = {}
-      global.mod.fluids[fluid_name] = fluid_temps
+  local ff = global.mod.fluids[fluid_name]
+  if ff == nil then
+    ff = {}
+    global.mod.fluids[fluid_name] = ff
+  end
+  if infinite_supply then
+    local old_count = ff[temp] or 0
+    if count > old_count then
+      ff[temp] = count
     end
-    fluid_temps[temp] = count
+  elseif count <= 0 then
+    ff[temp] = nil
+  else
+    ff[temp] = count
   end
 end
 
@@ -678,9 +692,10 @@ end
 
 function M.increment_item_count(item_name, delta)
   local count = M.get_item_count(item_name)
-  global.mod.items[item_name] = count + delta
+  M.set_item_count(item_name, count + delta)
 end
 
+--[[
 function M.take_item_count(item_name, n_wanted, entity)
   local n_avail = M.get_item_count(item_name)
 
@@ -693,6 +708,7 @@ function M.take_item_count(item_name, n_wanted, entity)
   end
   return n_trans
 end
+]]
 
 function M.get_player_info(player_index)
   local info = global.mod.player_info[player_index]

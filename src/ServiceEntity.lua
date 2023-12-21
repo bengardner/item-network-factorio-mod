@@ -46,7 +46,9 @@ local function transfer_item_to_inv(entity, inv, name, count)
 end
 
 local function transfer_item_to_inv_max(entity, inv, name)
-  transfer_item_to_inv(entity, inv, name, inv.get_insertable_count(name))
+  if game.item_prototypes[name] ~= nil then
+    transfer_item_to_inv(entity, inv, name, inv.get_insertable_count(name))
+  end
 end
 
 local fuel_list = {

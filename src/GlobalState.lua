@@ -842,7 +842,8 @@ end
 
 function M.get_service_type_for_entity(name)
   if global.name_service_map == nil then
-    error("called before init: get_service_type_for_entity")
+    M.setup()
+    --error("called before init: get_service_type_for_entity")
   end
   return global.name_service_map[name]
 end

@@ -8,8 +8,7 @@ local Paths = require "src.Paths"
 
 local M = {}
 
-local function add_chest(variant)
-  local name = "network-chest-" .. variant
+local function add_chest(name)
   local override_item_name = "iron-chest"
   local override_prototype = "container"
 
@@ -17,12 +16,60 @@ local function add_chest(variant)
   entity.name = name
   entity.minable.result = name
 
+  entity.next_upgrade = nil
+  entity.flags = {
+    "not-upgradable",
+    "placeable-neutral",
+    "player-creation"
+  }
+
   -- update graphics
-  entity.picture.layers[1].filename = Paths.graphics .. "/entities/network-chest-" .. variant .. ".png"
-  entity.picture.layers[1].hr_version.filename = Paths.graphics .. "/entities/hr-network-chest-" .. variant .. ".png"
-  entity.picture.layers[1].hr_version.height = 80
-  entity.picture.layers[1].hr_version.width = 64
-  entity.icon = Paths.graphics .. "/icons/network-chest-" .. variant .. ".png"
+  --entity.picture.layers[1].filename = Paths.graphics .. "/entities/" .. name .. ".png"
+  entity.picture.layers = {
+    {
+      filename = Paths.graphics .. "/entities/hr-" .. name .. ".png",
+      height = 80,
+      width = 64,
+      hr_version = {
+        filename = Paths.graphics .. "/entities/hr-" .. name .. ".png",
+        height = 80,
+        width = 64,
+        priority = "extra-high",
+        scale = 0.5,
+        shift = { -0.015625, -0.015625 },
+      },
+    },
+    {
+      draw_as_shadow = true,
+      filename = "__base__/graphics/entity/iron-chest/iron-chest-shadow.png",
+      height = 26,
+      hr_version = {
+        draw_as_shadow = true,
+        filename = "__base__/graphics/entity/iron-chest/hr-iron-chest-shadow.png",
+        height = 50,
+        priority = "extra-high",
+        scale = 0.5,
+        shift = {
+          0.328125,
+          0.1875
+        },
+        width = 110
+      },
+      priority = "extra-high",
+      shift = {
+        0.3125,
+        0.203125
+      },
+      width = 56
+    },
+  }
+  entity.resistances = {
+    { percent = 95, type = "fire" },
+    { percent = 95, type = "impact" },
+    { percent = 95, type = "acid" },
+  }
+
+  entity.icon = Paths.graphics .. "/icons/" .. name .. ".png"
 
   -- update inventory
   entity.inventory_size = 40 -- constants.NUM_INVENTORY_SLOTS
@@ -35,8 +82,8 @@ local function add_chest(variant)
   local item = table.deepcopy(data.raw["item"][override_item_name])
   item.name = name
   item.place_result = name
-  item.order = "a[items]-0[network-chest]-" .. variant
-  item.icon = Paths.graphics .. "/icons/network-chest-" .. variant .. ".png"
+  item.order = "a[items]-0[" .. name .. "]"
+  item.icon = Paths.graphics .. "/icons/" .. name .. ".png"
 
 
   -- create a dummy inventory
@@ -58,8 +105,9 @@ end
 
 function M.main()
   -- FIXME: these should be the logistic chests with inv size of 19
-  --add_chest("requester") -- currently useless
-  add_chest("provider")
+  add_chest("network-chest")
+  add_chest("network-chest-provider")
+  --add_chest("network-chest-requester") -- currently useless
 end
 
 M.main()

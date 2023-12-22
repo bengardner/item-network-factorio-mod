@@ -9,7 +9,7 @@ require "src.prototypes.network-tanks"
 local M = {}
 
 function M.main()
-  M.add_network_chest()
+  -- M.add_network_chest()
   M.add_loader()
   M.add_network_tank()
 
@@ -59,7 +59,7 @@ function M.main()
     },
   })
 end
-
+--[[
 function M.add_network_chest()
   local name = "network-chest"
   local override_item_name = "iron-chest"
@@ -99,6 +99,7 @@ function M.add_network_chest()
 
   data:extend({ entity, item, recipe })
 end
+]]
 
 function M.add_loader()
   local name = "network-loader"

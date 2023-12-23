@@ -1160,6 +1160,54 @@ local function recurse_find_damage(tab)
   return nil
 end
 
+local function scan_action(action)
+  local ad = action.action_delivery
+  -- print(string.format(" -- type=%s", ad.type))
+  local ent_names = {}
+  for k, v in pairs(ad) do
+    local atype = v.type
+
+    -- "instant", "projectile", "flame-thrower", "beam", "stream", "artillery".
+    if v.type == 'stream' then
+      --print(string.format(" -- [%s] type=%s stream=%s", k, v.type, v.stream))
+      table.insert(ent_names, v.stream)
+
+    elseif v.type == 'instant' then
+      --print(string.format(" -- [%s] type=%s source_effects=%s target_effects=%s", k, v.type,
+      --  serpent.line(v.source_effects), serpent.line(v.target_effects)))
+      return recurse_find_damage(v)
+
+    elseif v.type == 'projectile' then
+      --print(string.format(" -- [%s] type=%s projectile=%s", k, v.type, v.projectile))
+      table.insert(ent_names, v.projectile)
+
+    elseif v.type == 'flame-thrower' then
+      --print(string.format(" -- [%s] type=%s explosion=%s", k, v.type, serpent.line(v.explosion)))
+      table.insert(ent_names, v.explosion)
+
+    elseif v.type == 'beam' then
+      --print(string.format(" -- [%s] type=%s beam=%s", k, v.type, v.beam))
+      table.insert(ent_names, v.beam)
+
+    elseif v.type == 'artillery' then
+      --print(string.format(" -- [%s] type=%s projectile=%s", k, v.type, v.projectile))
+      table.insert(ent_names, v.projectile)
+
+    end
+    -- print(string.format(" -- [%s] = %s", k, serpent.block(v)))
+  end
+
+  for _, v in ipairs(ent_names) do
+    local ent_prot = game.entity_prototypes[v]
+    if ent_prot ~= nil then
+      local damage = recurse_find_damage(ent_prot.attack_result)
+      if damage ~= nil then
+        return damage
+      end
+    end
+  end
+end
+
 --[[
 Collect a decreasing list of ammos byte damage / type.
 ]]
@@ -1168,17 +1216,29 @@ function M.get_ammo_table()
     local ammo_list = {}
     for _, prot in pairs(game.item_prototypes) do
       if prot.type == "ammo" then
+        local damage
         local at = prot.get_ammo_type()
         if at ~= nil then
-          local damage = recurse_find_damage(at.action)
-          if damage ~= nil and type(damage.amount) == "number" then
-            local xx = ammo_list[at.category]
-            if xx == nil then
-              xx = {}
-              ammo_list[at.category] = xx
+          --print(string.format("\nAMMO: %s = cat=%s actions=%s", prot.name, at.category, #at.action))
+          for ai, ad in ipairs(at.action) do
+            --print(string.format("  [%s] action", ai))
+            local dd = scan_action(ad)
+            if dd ~= nil then
+              damage = dd
+              --print(string.format("  [%s] action damage= %s", ai, serpent.line(damage)))
             end
-            table.insert(xx, { name=prot.name, amount=damage.amount })
           end
+          --local damage = recurse_find_damage(at.action)
+          local damage_amount = 1
+          if damage ~= nil and type(damage.amount) == "number" then
+            damage_amount = damage.amount
+          end
+          local xx = ammo_list[at.category]
+          if xx == nil then
+            xx = {}
+            ammo_list[at.category] = xx
+          end
+          table.insert(xx, { name=prot.name, amount=damage_amount })
         end
       end
     end
@@ -1196,7 +1256,7 @@ function M.get_ammo_table()
       end
     end
 
-    -- hard code some projectile stuff that I haven't figured out how to detect
+    --[[ hard code some projectile stuff that I haven't figured out how to detect
     ammo_table['cannon-shell'] = {
       "explosive-uranium-cannon-shell",
       "explosive-cannon-shell",
@@ -1206,6 +1266,7 @@ function M.get_ammo_table()
     ammo_table['flamethrower'] = { "flamethrower-ammo" }
 
     ammo_table['artillery-shell'] = { "artillery-shell" }
+    ]]
 
     print(string.format("ammo table: %s", serpent.line(ammo_table)))
     global.ammo_table = ammo_table

@@ -126,33 +126,28 @@ local function service_recipe_inv(entity, inv, recipe, factor)
   end
 end
 
--- TODO: search this on startup. categories: "artillery-shell", "cannon-shell", "flamethrower", "rocket", "shotgun-shell"
--- "ammo" category "bullet"
-local ammo_bullet_types = {
-  "uranium-rounds-magazine",   -- damage 24
-  "piercing-rounds-magazine",  -- damage @ ammo_type.action.action_delivery.target_effects[]/type="damage" .damage.amount=8
-  "firearm-magazine",          -- damage 5
-}
+-- this never changes
+local artillery_ammo_cats = { "artillery-shell" }
 
--- "ammo" category "artillery-shell"
-local ammo_artillery_shell_types = {
-  "artillery-shell",
-}
-
-local function service_reload_ammo_type(entity, inv, ammo_category)
-  if inv == nil then
-    -- clog("service_reload_ammo_type: %s nil inv", entity.name)
+local function service_reload_ammo_type(entity, inv, ammo_categories)
+  -- check inputs that might be bad
+  if inv == nil or ammo_categories == nil or #ammo_categories == 0 then
     return
   end
 
   if inv.is_empty() then
-    local best_ammo = GlobalState.get_best_available_ammo(ammo_category)
-    -- clog("service_reload_ammo_type: %s inv empty, cat=%s best=%s", entity.name, ammo_category, best_ammo)
-    if best_ammo ~= nil then
-      transfer_item_to_inv_max(entity, inv, best_ammo)
-      return
+    -- add ammo
+    for _, cat in ipairs(ammo_categories) do
+      local best_ammo = GlobalState.get_best_available_ammo(cat)
+      -- clog("service_reload_ammo_type: %s inv empty, cat=%s best=%s", entity.name, ammo_category, best_ammo)
+      if best_ammo ~= nil then
+        transfer_item_to_inv_max(entity, inv, best_ammo)
+        -- it is remotely possible that there can be multiple ammo_categories...
+        --return
+      end
     end
   else
+    -- top off existing ammo
     for name, count in pairs(inv.get_contents()) do
       transfer_item_to_inv_max(entity, inv, name)
     end
@@ -230,17 +225,17 @@ function M.update_entity(info)
     end
     -- will stop refill if status becomes "output full"
   elseif entity.type == "car" then
-    service_reload_ammo_car(entity, entity.get_inventory(defines.inventory.car_ammo), ammo_bullet_types)
+    service_reload_ammo_car(entity, entity.get_inventory(defines.inventory.car_ammo))
 
     if info.car_output_inv == true then
       GlobalState.items_inv_to_net_with_limits(entity.get_output_inventory())
     end
 
   elseif entity.type == "ammo-turret" then
-    service_reload_ammo_type(entity, entity.get_inventory(defines.inventory.turret_ammo), "bullet")
+    service_reload_ammo_type(entity, entity.get_inventory(defines.inventory.turret_ammo), entity.prototype.attack_parameters.ammo_categories)
 
   elseif entity.type == "artillery-turret" then
-    service_reload_ammo_type(entity, entity.get_inventory(defines.inventory.artillery_turret_ammo), "artillery-shell")
+    service_reload_ammo_type(entity, entity.get_inventory(defines.inventory.artillery_turret_ammo), artillery_ammo_cats)
 
   end
 

@@ -453,7 +453,7 @@ Event.on_event(
   function (event)
     if event.gui_type == defines.gui_type.entity then
       local val = Constants.NETWORK_TANK_NAMES[event.entity.name]
-      if val ~= nil then
+      if val ~= nil and val.gui == true then
         local entity = event.entity
         local info = GlobalState.get_tank_info(entity.unit_number)
         if info == nil then
@@ -464,11 +464,7 @@ Event.on_event(
         if player == nil then
           return
         end
-        if val == false then
-          -- network_tank_provider_on_gui_opened(player, entity, val)
-        else
-          network_tank_on_gui_opened(player, entity, val)
-        end
+        network_tank_on_gui_opened(player, entity, val)
       end
     end
   end

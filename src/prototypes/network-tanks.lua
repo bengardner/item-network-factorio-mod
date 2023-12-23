@@ -1,17 +1,18 @@
 local constants = require "src.constants"
 local Paths = require "src.Paths"
 
-local function add_network_tank(name, is_output)
-  local base_level = -0.5
-  local fb_type = "input"
-  if is_output then
-    -- requests from the network and dumps into other entities
-    fb_type = "output"
-    base_level = 0.5
+local function fix_pipe_covers(pc, name)
+  for _, xx in ipairs({ "north", "south", "east", "west" }) do
+    pc[xx].layers[1].filename = Paths.graphics .. "/entities/pipe-covers/" .. name .. "-pipe-cover-" .. xx .. ".png"
+    pc[xx].layers[1].hr_version.filename = Paths.graphics .. "/entities/pipe-covers/hr-" .. name .. "-pipe-cover-" .. xx .. ".png"
   end
+  print(string.format(" pipe-covers for %s: %s", name, serpent.block(pc)))
+  return pc
+end
 
+-- cfg.type
+local function add_network_tank(name, cfg)
   local override_item_name = "storage-tank"
-
   local fname = Paths.graphics .. "/entities/" .. name .. ".png"
 
   local entity = {
@@ -31,11 +32,11 @@ local function add_network_tank(name, is_output)
     fluid_box = {
       base_area = constants.TANK_AREA,
       height = constants.TANK_HEIGHT,
-      base_level = base_level,
-      pipe_covers = pipecoverspictures(),
+      base_level = cfg.base_level,
+      pipe_covers = fix_pipe_covers(pipecoverspictures(), name),
       pipe_connections =
       {
-        { position = { 0, 1 }, type = fb_type },
+        { position = { 0, 1 }, type = cfg.type },
       },
     },
     two_direction_only = false,
@@ -95,7 +96,5 @@ local function add_network_tank(name, is_output)
 end
 
 for k, v in pairs(constants.NETWORK_TANK_NAMES) do
-  if v == true or v == false then
-    add_network_tank(k, v)
-  end
+  add_network_tank(k, v)
 end

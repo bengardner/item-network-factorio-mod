@@ -18,9 +18,9 @@ M.QUEUE_PERIOD_MIN = M.QUEUE_TICKS * M.QUEUE_COUNT
 M.UNLIMITED = 2000000000 -- "2G"
 
 M.NETWORK_TANK_NAMES = {
-  ["network-tank"] = "no", -- not created by network-tanks.lua
-  ["network-tank-requester"] = true, -- from network to pipes
-  ["network-tank-provider"] = false, -- from pipes to network
+  ["network-tank"] = { gui=true, type="input-output", base_level=0 },       -- configurable
+  ["network-tank-requester"] = { gui=true, type="output", base_level=0.5 }, -- from network to pipes
+  ["network-tank-provider"] = { gui=false, type="input", base_level=-0.5 }, -- from pipes to network
   }
 
 return M

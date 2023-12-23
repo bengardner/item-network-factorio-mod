@@ -31,6 +31,7 @@ local function add_network_tank(name, is_output)
     fluid_box = {
       base_area = constants.TANK_AREA,
       height = constants.TANK_HEIGHT,
+      base_level = base_level,
       pipe_covers = pipecoverspictures(),
       pipe_connections =
       {

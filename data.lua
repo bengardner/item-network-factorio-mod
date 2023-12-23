@@ -9,7 +9,6 @@ require "src.prototypes.network-tanks"
 local M = {}
 
 function M.main()
-  -- M.add_network_chest()
   M.add_loader()
   M.add_network_tank()
 
@@ -59,47 +58,6 @@ function M.main()
     },
   })
 end
---[[
-function M.add_network_chest()
-  local name = "network-chest"
-  local override_item_name = "iron-chest"
-  local overwrite_prototype = "container"
-
-  local entity = table.deepcopy(data.raw[overwrite_prototype]
-    [override_item_name])
-  entity.name = name
-  entity.picture.layers[1].filename = Paths.graphics .. "/entities/network-chest-steel.png"
-
-  entity.picture.layers[1].hr_version.filename = Paths.graphics .. "/entities/hr-network-chest-steel.png"
-  entity.picture.layers[1].hr_version.height = 80
-  entity.picture.layers[1].hr_version.width = 64
-
-  entity.icon = Paths.graphics .. "/icons/network-chest-steel.png"
-  entity.inventory_size = constants.NUM_INVENTORY_SLOTS
-  entity.inventory_type = "with_filters_and_bar"
-  entity.minable.result = name
-
-  local item = table.deepcopy(data.raw["item"][override_item_name])
-  item.name = name
-  item.place_result = name
-  --item.icon = Paths.graphics .. "/items/network-chest.png"
-  --item.size = 64
-  item.icon = Paths.graphics .. "/icons/network-chest-steel.png"
-  item.order = "a[items]-0[network-chest]"
-
-  local recipe = {
-    name = name,
-    type = "recipe",
-    enabled = true,
-    energy_required = 0.5,
-    ingredients = {},
-    result = name,
-    result_count = 1,
-  }
-
-  data:extend({ entity, item, recipe })
-end
-]]
 
 function M.add_loader()
   local name = "network-loader"

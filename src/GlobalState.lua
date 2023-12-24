@@ -658,6 +658,10 @@ function M.set_item_count(item_name, count)
   if infinite_supply then
     local old_count = global.mod.items[item_name] or 0
     if count > old_count then
+      local prot = game.item_prototypes[item_name]
+      if prot ~= nil and prot.stack_size > count then
+        count = prot.stack_size
+      end
       global.mod.items[item_name] = count
     end
   elseif count <= 0 then
@@ -676,6 +680,9 @@ function M.set_fluid_count(fluid_name, temp, count)
   if infinite_supply then
     local old_count = ff[temp] or 0
     if count > old_count then
+      if count < constants.MAX_TANK_SIZE then
+        count = constants.MAX_TANK_SIZE
+      end
       ff[temp] = count
     end
   elseif count <= 0 then

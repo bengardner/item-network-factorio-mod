@@ -397,6 +397,30 @@ local function furnace_refresh_tags(info)
   return info.ore_name
 end
 
+-------------------------------------------------------------------------------
+
+function M.lab_service(info)
+  local entity = info.entity
+
+  -- handle refueling (burner lab)
+  M.refuel_entity(entity)
+
+  local inv = entity.get_inventory(defines.inventory.lab_input)
+  if inv == nil then
+    return
+  end
+
+  -- REVISIT: load the minimum?
+  for _, item in ipairs(entity.prototype.lab_inputs) do
+    transfer_item_to_inv_max(entity, inv, item)
+  end
+
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+end
+
+
+-------------------------------------------------------------------------------
+
 function M.create(entity, tags)
   local info = GlobalState.entity_info_add(entity, tags)
 
@@ -415,5 +439,6 @@ GlobalState.register_service_task("furnace", {
   clone=furnace_clone,
   tag="ore_name",
 })
+GlobalState.register_service_task("lab", { create=M.create, service=M.lab_service })
 
 return M

@@ -1330,6 +1330,7 @@ function M.scan_prototypes()
     ["furnace"]            = "furnace", -- "furnace",
     ["ammo-turret"]        = "general-service", -- "ammo-turret",
     ["artillery-turret"]   = "general-service", -- "artillery-turret",
+    ["lab"]                = "lab", -- "car",
   }
 
   if settings.global["item-network-service-assemblers"].value then

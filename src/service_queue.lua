@@ -205,9 +205,11 @@ local function get_request_buffer(requests, item)
 end
 
 local function inv_filter_slots(inv, item, inv_idx, count)
-  for _ = 1, count do
-    inv.set_filter(inv_idx, item)
-    inv_idx = inv_idx + 1
+  if inv.supports_filters() then
+    for _ = 1, count do
+      inv.set_filter(inv_idx, item)
+      inv_idx = inv_idx + 1
+    end
   end
   return inv_idx
 end

@@ -51,6 +51,18 @@ local function transfer_item_to_inv_max(entity, inv, name)
   end
 end
 
+local function transfer_item_to_inv_level(entity, inv, name, count)
+  if game.item_prototypes[name] ~= nil then
+    local n_have = inv.get_item_count(name)
+    if n_have < count then
+      local n_ins = math.min(inv.get_insertable_count(name), count - n_have)
+      if n_ins > 0 then
+        transfer_item_to_inv(entity, inv, name, n_ins)
+      end
+    end
+  end
+end
+
 local fuel_list = {
   --"processed-fuel",
   "coal",
@@ -412,7 +424,7 @@ function M.lab_service(info)
 
   -- REVISIT: load the minimum?
   for _, item in ipairs(entity.prototype.lab_inputs) do
-    transfer_item_to_inv_max(entity, inv, item)
+    transfer_item_to_inv_level(entity, inv, item, 10)
   end
 
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX

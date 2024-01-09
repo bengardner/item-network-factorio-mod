@@ -8,7 +8,7 @@ local Paths = require "src.Paths"
 
 local M = {}
 
-local function add_chest(name)
+local function add_chest(name, with_filter)
   local override_item_name = "iron-chest"
   local override_prototype = "container"
 
@@ -74,9 +74,13 @@ local function add_chest(name)
   -- update inventory
   entity.inventory_size = 40 -- constants.NUM_INVENTORY_SLOTS
   -- no filters
-  -- entity.inventory_type = "with_filters_and_bar"
-  entity.inventory_type = "with_bar"
-  entity.enable_inventory_bar = false
+  if with_filter then
+    entity.inventory_type = "with_filters_and_bar"
+    entity.enable_inventory_bar = true
+  else
+    entity.inventory_type = "with_bar"
+    entity.enable_inventory_bar = false
+  end
 
   -- create the item
   local item = table.deepcopy(data.raw["item"][override_item_name])
@@ -105,8 +109,8 @@ end
 
 function M.main()
   -- FIXME: these should be the logistic chests with inv size of 19
-  add_chest("network-chest")
-  add_chest("network-chest-provider")
+  add_chest("network-chest", true)
+  add_chest("network-chest-provider", false)
   --add_chest("network-chest-requester") -- currently useless
 end
 

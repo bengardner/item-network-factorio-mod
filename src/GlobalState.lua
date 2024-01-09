@@ -1153,6 +1153,9 @@ function M.get_best_available_fuel(entity)
 end
 
 local function recurse_find_damage(tab)
+  if type(tab) ~= "table" then
+    return nil
+  end
   if tab.type == 'damage' and tab.damage ~= nil then
     return tab.damage
   end

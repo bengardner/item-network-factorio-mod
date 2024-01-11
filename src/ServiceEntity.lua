@@ -63,39 +63,19 @@ local function transfer_item_to_inv_level(entity, inv, name, count)
   end
 end
 
-local fuel_list = {
-  --"processed-fuel",
-  "coal",
-  "wood",
-}
-
 local function service_refuel(entity, inv)
   if inv.is_empty() then
     local fuel_name, n_avail = GlobalState.get_best_available_fuel(entity)
-    if fuel_name == nil then
+    if fuel_name == nil or n_avail == nil then
       return
     end
     --clog("best fuel for %s is %s and we have %s", entity.name, fuel_name, n_avail)
-    local prot = game.item_prototypes[fuel_name]
-    local n_avail = GlobalState.get_item_count(fuel_name)
     if n_avail > 0 then
+      local prot = game.item_prototypes[fuel_name]
       local n_add = (#inv * prot.stack_size) -- - 12
       transfer_item_to_inv(entity, inv, fuel_name, math.min(n_avail, n_add))
     end
     return
-    --[[
-    for _, fuel_name in ipairs(fuel_list) do
-      local prot = game.item_prototypes[fuel_name]
-      local n_avail = GlobalState.get_item_count(fuel_name)
-      if prot ~= nil and n_avail > 0 then
-        -- add some if if empty
-        -- need to NOT fill it to the top or we can cause a deadlock
-        local n_add = (#inv * prot.stack_size) - 12
-        transfer_item_to_inv(entity, inv, fuel_name, math.min(n_avail, n_add))
-        return
-      end
-    end
-    ]]
   else
     -- try to top off the fuel(s)
     for fuel, _ in ipairs(inv.get_contents()) do

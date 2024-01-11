@@ -6,6 +6,7 @@ local UiCharacterInventory = require "src.UiCharacterInventory"
 local UiNetworkItems = require "src.UiNetworkItems"
 local UiChestInventory = require "src.UiChestInventory"
 local clog = require("src.log_console").log
+local auto_player_request = require'src.auto_player_request'
 
 local M = {}
 
@@ -367,7 +368,7 @@ Event.on_event("in_open_test_view", function (event)
 
 
 Event.on_event("debug-network-item", function (event)
-    GlobalState.log_queue_info()
+    --GlobalState.log_queue_info()
     -- log_ammo_stuff()
     --[[ player_index, input_name, cursor_position, ]]
     local player = game.get_player(event.player_index)
@@ -379,6 +380,7 @@ Event.on_event("debug-network-item", function (event)
       if info ~= nil then
         clog(" - %s", serpent.line(info))
       end
+      auto_player_request.doit(player)
     end
   end)
 

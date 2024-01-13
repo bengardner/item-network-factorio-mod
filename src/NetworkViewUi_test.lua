@@ -13,6 +13,8 @@ local M = {}
 M.container_width = 1424
 M.container_height = 836
 
+M.super_debug = false
+
 function M.get_gui(player_index)
   return GlobalState.get_ui_state(player_index).test_view
 end
@@ -366,6 +368,47 @@ Event.on_event("in_open_test_view", function (event)
     M.create_gui(event.player_index)
   end)
 
+local function request_everything(player)
+  local character = player.character
+  if character == nil or not player.character_personal_logistic_requests_enabled then
+    return
+  end
+
+  local requests = {}
+  for idx=1, character.request_slot_count do
+    local rr = character.get_request_slot(idx)
+    if rr ~= nil then
+      requests[rr.name] = { count=rr.count, slot=idx }
+    end
+  end
+
+  local items = {}
+  for name, recipe in pairs(player.force.recipes) do
+    --print(string.format("RECIPE: %s enabled=%s hidden=%s products=%s", recipe.name, recipe.enabled, recipe.hidden, serpent.line(recipe.products)))
+    if recipe.enabled and not recipe.hidden then
+      for _, pp in ipairs(recipe.products) do
+        local prot = game.item_prototypes[pp.name]
+        if prot ~= nil and items[pp.name] == nil then
+          items[pp.name] = prot.stack_size
+        end
+      end
+    end
+  end
+
+  local add_idx = character.request_slot_count + 1
+  for item, count in pairs(items) do
+    local rr = requests[item]
+    if rr == nil then
+      player.print(string.format("Added Reqeust for %s in slot %s", item, add_idx))
+      character.set_request_slot({name=item, count=count}, add_idx)
+      add_idx = add_idx + 1
+    else
+      if rr.count > 0 and rr.count < count then
+        character.set_request_slot({name=item, count=count}, rr.slot)
+      end
+    end
+  end
+end
 
 Event.on_event("debug-network-item", function (event)
     --GlobalState.log_queue_info()
@@ -380,8 +423,187 @@ Event.on_event("debug-network-item", function (event)
       if info ~= nil then
         clog(" - %s", serpent.line(info))
       end
+      if ent.type == "rocket-silo" then
+        clog("%s recipe=%s allow+copy=%s", ent.name, serpent.line(ent.get_recipe().ingredients), ent.prototype.allow_copy_paste)
+      end
       auto_player_request.doit(player)
+      --request_everything(player)
     end
   end)
+
+local function update_player_selected(player)
+  if player == nil then
+    return
+  end
+
+  local info
+  local ent = player.selected
+  if ent ~= nil and ent.unit_number ~= nil then
+    info = GlobalState.entity_info_get(ent.unit_number)
+  end
+
+  local gname = "MYSUPERTEST"
+  local parent = player.gui.left
+  local frame = parent[gname]
+  if frame ~= nil then
+    frame.destroy()
+  end
+
+  if info == nil then
+    return
+  end
+
+  -- create the window/frame
+  frame = parent.add {
+    type = "frame",
+    name = gname,
+    --caption = "This is a test",
+    style = "quick_bar_window_frame",
+    --style = "tooltip_heading_label",
+    --style = "tooltip_generated_from_description_frame",
+    ignored_by_interaction = true,
+  }
+
+  -- create the main vertical flow
+  local vflow = frame.add {
+    type = "flow",
+    direction = "vertical",
+  }
+
+  -- add the header
+  local hdr_frame = vflow.add {
+    type = "frame",
+    name = gname,
+    style = "tooltip_title_frame_light",
+    ignored_by_interaction = true,
+  }
+
+  hdr_frame.add {
+    type="label",
+    name="MYSUPERTEST-text",
+    caption = ent.localised_name,
+    style = "tooltip_heading_label",
+    ignored_by_interaction = true,
+  }
+
+  -- start the description area
+  local desc_flow = vflow.add {
+    type = "flow",
+    direction = "vertical",
+  }
+
+  --[[
+  vflow.add {
+    type="label",
+    name="MYSUPERTEST-text",
+    caption = "This is a test",
+    --style = "tooltip_heading_title",
+    --style = "tooltip_title_label",
+    style = "tooltip_heading_label",
+    ignored_by_interaction = true,
+  }
+  ]]
+  --[[
+  flow = vflow.add {
+    type = "flow",
+    name="MYSUPERTEST-flow",
+    direction = "vertical",
+    --style = "tooltip_panel_background",
+  }
+  ]]
+  if M.super_debug == true then
+    -- debug: log info
+    local xi = {}
+    for k, v in pairs(info) do
+      if k ~= "entity" then
+        xi[k] = v
+      end
+    end
+    desc_flow.add {
+      type="label",
+      caption = serpent.line(xi),
+      ignored_by_interaction = true,
+    }
+  else
+    desc_flow.add {
+      type="label",
+      caption = string.format("unit_number: %s", info.unit_number),
+      ignored_by_interaction = true,
+    }
+  end
+  if info.service_type ~= nil then
+    desc_flow.add {
+      type="label",
+      caption = string.format("Service type: %s", info.service_type),
+      ignored_by_interaction = true,
+    }
+  end
+  if info.service_priority ~= nil then
+    desc_flow.add {
+      type="label",
+      caption = string.format("Service priority: %s", info.service_priority),
+      ignored_by_interaction = true,
+    }
+  end
+  if info.service_tick_delta ~= nil then
+    desc_flow.add {
+      type="label",
+      caption = string.format("Service period: %.0f seconds", info.service_tick_delta / 60),
+      ignored_by_interaction = true,
+    }
+  end
+  if info.service_tick ~= nil then
+    desc_flow.add {
+      type="label",
+      caption = string.format("Service tick: %s", info.service_tick),
+      ignored_by_interaction = true,
+    }
+  end
+  if info.ore_name ~= nil then
+    --[[
+    local hflow = desc_flow.add {
+      type="flow",
+      ignored_by_interaction = true,
+    }
+    hflow.add {
+      type="label",
+      caption = string.format("Ore: %s", info.ore_name),
+      ignored_by_interaction = true,
+    }
+    ]]
+    desc_flow.add {
+      type = "sprite-button",
+      sprite = "item/" .. info.ore_name,
+    }
+end
+  if info.requests ~= nil then
+    local take_hflow = desc_flow.add {
+      type="flow",
+      ignored_by_interaction = true,
+    }
+    for _, r in ipairs(info.requests) do
+      if r.type == "take" then
+        take_hflow.add {
+          type = "sprite-button",
+          sprite = "item/" .. r.item,
+          number = r.buffer or 0,
+        }
+      end
+    end
+  end
+  --string.format("[%s] %s", ent.unit_number, ent.localised_name)
+end
+
+local function on_selected_entity_changed(event)
+  update_player_selected(game.get_player(event.player_index))
+end
+Event.on_event(defines.events.on_selected_entity_changed, on_selected_entity_changed)
+
+local function update_all_players_selected()
+  for _, player in pairs(game.players) do
+    update_player_selected(player)
+  end
+end
+Event.on_nth_tick(60, update_all_players_selected)
 
 return M

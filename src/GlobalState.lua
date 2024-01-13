@@ -9,7 +9,7 @@ local M = {}
 
 M.get_default_limit = require("src.DefaultLimits").get_default_limit
 
-local infinite_supply = true
+local infinite_supply = false
 local setup_has_run = false
 
 function M.setup()

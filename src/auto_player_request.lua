@@ -5,15 +5,63 @@ local Event = require('__stdlib__/stdlib/event/event')
 local item_utils = require("src.item_utils")
 local clog = require("src.log_console").log
 
-local function set_character_requests(player, character, items)
+local function sort_character_requests(player, character, items)
   local requests = {}
   for idx=1, character.request_slot_count do
-    local rr = character.get_request_slot(idx)
-    if rr ~= nil then
-      --print(string.format("old [%s] = %s", idx, serpent.line(rr)))
-      requests[rr.name] = { count=rr.count, slot=idx }
+    local ls = character.get_personal_logistic_slot(idx)
+    if ls ~= nil and ls.name ~= nil then
+      table.insert(requests, { slot=idx, item=ls.name, min=ls.min, max=ls.max })
     end
   end
+
+  table.sort(requests, item_utils.entry_compare_items)
+  requests = item_utils.entry_list_split_by_group(requests)
+
+  local add_idx = 1
+  for _, rr in ipairs(requests) do
+    if rr == 'break' then
+      local old_idx = add_idx
+      add_idx = 1 + math.floor((add_idx + 8) / 10) * 10
+      for idx=old_idx, add_idx -1 do
+        character.clear_personal_logistic_slot(idx)
+      end
+    else
+      -- request exists -- do not touch if in the same slot
+      if rr.slot ~= add_idx then
+        if rr.slot > add_idx then
+          character.clear_personal_logistic_slot(rr.slot)
+        end
+        character.clear_personal_logistic_slot(add_idx)
+        character.set_personal_logistic_slot(add_idx, { name=rr.item, min=rr.min, max=rr.max })
+      else
+        -- same index (no change)
+        --character.clear_personal_logistic_slot(add_idx)
+        --character.set_personal_logistic_slot(add_idx, { name=rr.item, min=rr.min, max=rr.max })
+      end
+      add_idx = add_idx + 1
+    end
+  end
+  for idx=add_idx, character.request_slot_count do
+    character.clear_personal_logistic_slot(idx)
+  end
+end
+
+local function set_character_requests(player, character, items)
+  local requests = {}
+  for name, count in pairs(items) do
+    requests[name] = { slot=0, name=name, min=count, max=count }
+  end
+  for idx=1, character.request_slot_count do
+    local ls = character.get_personal_logistic_slot(idx)
+    if ls ~= nil and ls.name ~= nil then
+      --print(string.format("old [%s] = %s", idx, serpent.line(rr)))
+      requests[ls.name] = { slot=idx, name=ls.name, min=ls.min, max=ls.max } -- fields: name, min, max
+    end
+  end
+
+  table.sort(items, item_utils.entry_compare_items)
+
+  local thelist = item_utils.entry_list_split_by_group(items)
 
   --print("\nitems:")
   --print(serpent.block(items))
@@ -26,30 +74,37 @@ local function set_character_requests(player, character, items)
       local old_idx = add_idx
       add_idx = 1 + math.floor((add_idx + 8) / 10) * 10
       for idx=old_idx, add_idx -1 do
-        character.clear_request_slot(idx)
+        character.clear_personal_logistic_slot(idx)
       end
     else
       local item = info.item
       local count = info.count
       local rr = requests[item]
       if rr ~= nil then
+        requests[item] = nil
         -- request exists -- do not touch if in the same slot
         if rr.slot ~= add_idx then
           if rr.slot > add_idx then
-            character.clear_request_slot(rr.slot)
+            character.clear_personal_logistic_slot(rr.slot)
           end
-          character.clear_request_slot(add_idx)
-          character.set_request_slot({ name=item, count=math.max(1, rr.count) }, add_idx)
+          character.clear_personal_logistic_slot(add_idx)
+          character.set_personal_logistic_slot(add_idx, { name=item, min=rr.min, max=rr.max })
         end
       else
-        character.clear_request_slot(add_idx)
-        character.set_request_slot({name=item, count=count}, add_idx)
+        character.clear_personal_logistic_slot(add_idx)
+        character.set_personal_logistic_slot(add_idx, { name=item, min=count, max=count })
       end
       add_idx = add_idx + 1
     end
   end
+  for _, rr in pairs(requests) do
+    print(string.format("ADD: %s @ %s", serpent.line(rr), add_idx))
+    character.clear_personal_logistic_slot(add_idx)
+    character.set_personal_logistic_slot(add_idx, { name=rr.name, min=rr.min, max=rr.max })
+    add_idx = add_idx + 1
+  end
   for idx=add_idx, character.request_slot_count do
-    character.clear_request_slot(idx)
+    character.clear_personal_logistic_slot(idx)
   end
 end
 
@@ -64,7 +119,7 @@ local function force_request_everything(force)
       if prot ~= nil then
         items_tab[name] = true
         table.insert(items, { item = name, count = prot.stack_size })
-        -- print(string.format(" -- Added %s due to %s [%s]", name, recipe.name, what))
+        --print(string.format(" -- Added %s due to %s [%s]", name, recipe.name, what))
       end
     end
   end
@@ -74,7 +129,7 @@ local function force_request_everything(force)
       for _, pp in ipairs(recipe.products) do
         add_item(pp.name, recipe, 'product')
       end
-      --[[ this gets too many items, especially if there is a 'scrap' recipe
+      --[[ this gets too many items, especially if there is a 'scrap' recipea
       for _, pp in ipairs(recipe.ingredients) do
         if pp.type == "item" then
           add_item(pp.name, recipe, 'ingredients')
@@ -85,12 +140,13 @@ local function force_request_everything(force)
   end
   table.sort(items, item_utils.entry_compare_items)
 
-  items = item_utils.entry_list_split_by_group(items)
+  --items = item_utils.entry_list_split_by_group(items)
 
   for _, player in ipairs(force.players) do
     local character = player.character
     if character ~= nil and player.character_personal_logistic_requests_enabled then
-      set_character_requests(player, character, items)
+      --set_character_requests(player, character, items)
+      sort_character_requests(player, character, items)
     end
   end
 end

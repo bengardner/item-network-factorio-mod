@@ -1119,7 +1119,8 @@ function M.get_fuel_table()
       for _, prot in pairs(game.item_prototypes) do
         local fc = prot.fuel_category
         if fc ~= nil then
-          table.insert(fuels, { name=prot.name, val=prot.stack_size * prot.fuel_value, cat=fc })
+          --table.insert(fuels, { name=prot.name, val=prot.stack_size * prot.fuel_value, cat=fc })
+          table.insert(fuels, { name=prot.name, val=prot.fuel_value, cat=fc })
         end
       end
     table.sort(fuels, function (a, b) return a.val > b.val end)

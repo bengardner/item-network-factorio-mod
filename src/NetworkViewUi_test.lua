@@ -548,7 +548,7 @@ local function update_player_selected(player)
   if info.service_tick_delta ~= nil then
     desc_flow.add {
       type="label",
-      caption = string.format("Service period: %.0f seconds", info.service_tick_delta / 60),
+      caption = string.format("Service period: %.2f seconds", info.service_tick_delta / 60),
       ignored_by_interaction = true,
     }
   end
@@ -575,23 +575,75 @@ local function update_player_selected(player)
       type = "sprite-button",
       sprite = "item/" .. info.ore_name,
     }
-end
+  end
   if info.requests ~= nil then
+    --[[
     local take_hflow = desc_flow.add {
       type="flow",
+      ignored_by_interaction = true,
+    }
+    ]]
+    local take_hflow = desc_flow.add {
+      type="table",
+      style="compact_slot_table",
+      column_count = 7,
       ignored_by_interaction = true,
     }
     for _, r in ipairs(info.requests) do
       if r.type == "take" then
         take_hflow.add {
           type = "sprite-button",
+          style="transparent_slot",
           sprite = "item/" .. r.item,
           number = r.buffer or 0,
         }
       end
     end
+    local inv = ent.get_output_inventory()
+    local is_locked = (inv.get_bar() < #inv)
+    desc_flow.add {
+      type="label",
+      caption = string.format("Locked: %s", is_locked),
+      ignored_by_interaction = true,
+    }
   end
   --string.format("[%s] %s", ent.unit_number, ent.localised_name)
+  --print(string.format("name=%s type=%s", ent.name, ent.type))
+  if ent.type == "assembling-machine" then
+    print(string.format("name=%s type=%s is_crafting=%s s=%s p=%s",
+      ent.name, ent.type,
+      ent.is_crafting(),
+      ent.crafting_speed,
+      ent.crafting_progress * 100))
+    local r = ent.get_recipe()
+    if r ~= nil then
+      local rtime = r.energy / ent.crafting_speed -- time to finish one recipe
+      local info = GlobalState.entity_info_get(ent.unit_number)
+      local svc_ticks = 60 * 60 -- assume 60 seconds
+      if info ~= nil and info.service_tick_delta ~= nil then
+        svc_ticks = info.service_tick_delta
+      end
+      local rp = game.recipe_prototypes[r.name]
+      if rp ~= nil then
+        print(string.format("  overload_multiplier=%s", rp.overload_multiplier))
+      end
+      --[[
+        calculate the amount of ingredients that should be in the input.
+        Assume we service once every 60 seconds.
+        If it takes 5 units for one recipe and the recipe takes 10 seconds, then we can finish
+          60/10 = 6 per minute.  That means we need 6*5=30 items in the input. Anything more is a waste.
+          Can be basd on the service time. Minimum is the amount reuired by the recipe.
+      ]]
+      local mult = svc_ticks / (rtime * 60)
+      local rmult = math.ceil(mult)
+      print(string.format("  energy=%s time=%s svc=%s mult=%s %s", r.energy, rtime, svc_ticks, mult, rmult))
+      local needed = {} -- key=item, val=amount
+      for _, ing in ipairs(r.ingredients) do
+        needed[ing.name] = math.floor(math.max(ing.amount, ing.amount * rmult))
+      end
+      print(serpent.line(needed))
+    end
+  end
 end
 
 local function on_selected_entity_changed(event)

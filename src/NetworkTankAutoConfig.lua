@@ -216,7 +216,7 @@ function M.auto_config(entity)
   local config = {
     type = "take",
     fluid = name,
-    buffer = constants.MAX_TANK_SIZE,
+    buffer = constants.DEFAULT_TANK_REQUEST,
     limit = 0,
     no_limit = true,
     temperature = fluid_proto.default_temperature,

@@ -4,6 +4,7 @@ M.NUM_INVENTORY_SLOTS = 48
 M.TANK_AREA = 1000
 M.TANK_HEIGHT = 1
 M.MAX_TANK_SIZE = M.TANK_AREA * M.TANK_HEIGHT * 100
+M.DEFAULT_TANK_REQUEST = 1000
 
 M.ALERT_TRANSFER_TICKS = 10 * 60
 M.MAX_MISSING_TICKS = 30 * 60
@@ -22,5 +23,10 @@ M.NETWORK_TANK_NAMES = {
   ["network-tank-requester"] = { gui=true, type="output", base_level=0.5 }, -- from network to pipes
   ["network-tank-provider"] = { gui=false, type="input", base_level=-0.5 }, -- from pipes to network
   }
+
+M.NETWORK_CHEST_NAMES = {
+  ["network-chest"] = true,
+  ["network-chest-provider"] = false,
+}
 
 return M

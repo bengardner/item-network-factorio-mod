@@ -98,20 +98,36 @@ function M.refuel_entity(entity)
   end
 end
 
+----
 local function service_recipe_inv(entity, inv, recipe, factor)
   if recipe ~= nil and inv ~= nil then
+
+    local rtime = recipe.energy / entity.crafting_speed -- time to finish one recipe
+
+    local svc_ticks = 60 * 60 -- assume 60 seconds if no info
+    local info = GlobalState.entity_info_get(entity.unit_number)
+    if info ~= nil and info.service_tick_delta ~= nil then
+      svc_ticks = info.service_tick_delta
+    end
+    -- calculate the recipe multiplier
+    local mult = math.ceil(svc_ticks / (rtime * 60))
+
+    local needed = {} -- key=item, val=amount
+    for _, ing in ipairs(recipe.ingredients) do
+      needed[ing.name] = math.floor(math.max(ing.amount, ing.amount * mult))
+    end
+
     local contents = inv.get_contents()
-    for _, ing in pairs(recipe.ingredients) do
-      local prot = game.item_prototypes[ing.name]
+    --print(string.format("recipe: %s [%s] need=%s have=%s", entity.name, entity.unit_number, serpent.line(needed), serpent.line(contents)))
+
+    for name, amount in pairs(needed) do
+      -- only handle items here
+      local prot = game.item_prototypes[name]
       if prot ~= nil then
-        local n_have = contents[ing.name] or 0
-        local n_need = math.max(ing.amount, math.max(ing.amount * factor, prot.stack_size))
-        if n_have < n_need then
-          transfer_item_to_inv(entity, inv, ing.name, n_need - n_have)
-          n_have = inv.get_item_count(ing.name)
-          if n_have < ing.amount then
-            GlobalState.missing_item_set(ing.name, entity.unit_number, ing.amount - n_have)
-          end
+        local n_have = contents[name] or 0
+        local n_want = math.min(inv.get_insertable_count(name), amount)
+        if n_have < n_want then
+          transfer_item_to_inv(entity, inv, name, n_want - n_have)
         end
       end
     end

@@ -109,8 +109,11 @@ end
 
 function M.main()
   -- FIXME: these should be the logistic chests with inv size of 19
-  add_chest("network-chest", true)
-  add_chest("network-chest-provider", false)
+  for k, v in pairs(constants.NETWORK_CHEST_NAMES) do
+    add_chest(k, v)
+  end
+    --add_chest("network-chest", true)
+    --add_chest("network-chest-provider", false)
   --add_chest("network-chest-requester") -- currently useless
 end
 

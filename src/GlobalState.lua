@@ -9,7 +9,6 @@ local M = {}
 
 M.get_default_limit = require("src.DefaultLimits").get_default_limit
 
-local infinite_supply = false
 local setup_has_run = false
 
 function M.setup()
@@ -17,10 +16,13 @@ function M.setup()
     return
   end
   setup_has_run = true
+  M.reread_settings()
 
   -- clog("*** ietm-network SETUP ***")
   M.inner_setup()
 end
+
+--"item-network-infinite-duplicate"
 
 --[[
 Service Queue Revamp.
@@ -157,6 +159,11 @@ function M.inner_setup()
   end
 end
 
+function M.reread_settings()
+  global.infinite_supply = settings.global["item-network-infinite-duplicate"].value
+  print(string.format("item-network: READYING SETTINGS: %s", global.infinite_supply))
+end
+
 --[[
 Creates a new entity from an entity and tags table.
 Calls the create() method for the entity.
@@ -268,7 +275,7 @@ function M.get_limits()
 end
 
 function M.get_limit(item_name)
-  if infinite_supply then
+  if global.infinite_supply then
     return constants.UNLIMITED
   end
   return global.mod.item_limits[item_name] or M.get_default_limit(item_name) or constants.UNLIMITED
@@ -660,7 +667,7 @@ function M.get_fluids()
 end
 
 function M.set_item_count(item_name, count)
-  if infinite_supply or item_name == "coin" then
+  if global.infinite_supply or item_name == "coin" then
     local old_count = global.mod.items[item_name] or 0
     if count > old_count then
       local prot = game.item_prototypes[item_name]
@@ -685,7 +692,7 @@ function M.set_fluid_count(fluid_name, temp, count)
     ff = {}
     global.mod.fluids[fluid_name] = ff
   end
-  if infinite_supply then
+  if global.infinite_supply then
     local old_count = ff[temp] or 0
     if count > old_count then
       if count < constants.MAX_TANK_SIZE then
@@ -1459,6 +1466,7 @@ Event.on_configuration_changed(function ()
   -- need to rescan the fuel table
   global.ammo_table = nil
   global.fuel_table = nil
+  M.reread_settings()
 end)
 
 -- need to run as soon as 'game' is available

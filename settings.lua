@@ -40,6 +40,12 @@ function M.main()
       setting_type = "runtime-global",
       default_value = false,
     },
+    {
+      type = "bool-setting",
+      name = "item-network-infinite-duplicate",
+      setting_type = "runtime-global",
+      default_value = false,
+    },
   })
 end
 

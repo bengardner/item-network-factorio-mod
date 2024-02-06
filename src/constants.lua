@@ -14,6 +14,7 @@ M.MAX_MISSING_TICKS = 30 * 60
 M.QUEUE_TICKS = 20
 M.QUEUE_COUNT = 32
 M.QUEUE_PERIOD_MIN = M.QUEUE_TICKS * M.QUEUE_COUNT
+M.MAX_PRIORITY = M.QUEUE_COUNT - 2
 
 -- has to be small enough to be in the constant combinator, which uses 32-bit signed integers
 M.UNLIMITED = 2000000000 -- "2G"

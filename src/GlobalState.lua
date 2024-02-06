@@ -436,7 +436,9 @@ end
 -------------------------------------------------------------------------------
 
 function M.entity_info_get(unit_number)
-  return global.mod.entity_info[unit_number]
+  if global.mod ~= nil then
+    return global.mod.entity_info[unit_number]
+  end
 end
 
 -- grab and filter
@@ -643,7 +645,10 @@ function M.get_fluid_count(fluid_name, temp)
   if fluid_temps == nil then
     return 0
   end
-  return fluid_temps[temp] or 0
+  if temp == nil then
+    temp = game.fluid_prototypes[fluid_name].default_temperature
+  end
+  return fluid_temps[temp] or 0, temp
 end
 
 function M.get_items()
@@ -655,7 +660,7 @@ function M.get_fluids()
 end
 
 function M.set_item_count(item_name, count)
-  if infinite_supply then
+  if infinite_supply or item_name == "coin" then
     local old_count = global.mod.items[item_name] or 0
     if count > old_count then
       local prot = game.item_prototypes[item_name]
@@ -672,6 +677,9 @@ function M.set_item_count(item_name, count)
 end
 
 function M.set_fluid_count(fluid_name, temp, count)
+  if temp == nil then
+    temp = game.fluid_prototypes[fluid_name].default_temperature
+  end
   local ff = global.mod.fluids[fluid_name]
   if ff == nil then
     ff = {}
@@ -693,6 +701,9 @@ function M.set_fluid_count(fluid_name, temp, count)
 end
 
 function M.increment_fluid_count(fluid_name, temp, delta)
+  if temp == nil then
+    temp = game.fluid_prototypes[fluid_name].default_temperature
+  end
   local count = M.get_fluid_count(fluid_name, temp)
   M.set_fluid_count(fluid_name, temp, count + delta)
 end
@@ -883,6 +894,41 @@ function M.queue_remove(unit_number)
   if unit_number ~= nil then
     for _, qq in ipairs(global.mod.scan_queues) do
       qq[unit_number] = nil
+    end
+  end
+end
+
+--[[
+Remove the unit_number from the queue and place in the next service queue.
+Does not alter the priority.
+]]
+function M.queue_reservice(info)
+  if info ~= nil then
+    local unit_number = info.unit_number
+    if unit_number ~= nil then
+      for _, qq in ipairs(global.mod.scan_queues) do
+        qq[unit_number] = nil
+      end
+      local q_idx = 1 + (global.mod.scan_index % constants.QUEUE_COUNT)
+      global.mod.scan_queues[q_idx][unit_number] = info
+      --print(string.format("[%s] [%s] queue_reservice", unit_number, info.entity.name))
+    end
+  end
+end
+
+--[[
+If the entity is an assembling-machine and the recipe changed, then schedule
+to service on the next tick.
+]]
+function M.assembler_check_recipe(entity)
+  if entity ~= nil and entity.valid and entity.unit_number ~= nil and entity.type == "assembling-machine" then
+    local info = M.entity_info_get(entity.unit_number)
+    if info ~= nil then
+      local recipe_name = (entity.get_recipe() or {}).name
+      if recipe_name ~= info.recipe_name then
+        --info.recipe_name = recipe_name
+        M.queue_reservice(info)
+      end
     end
   end
 end
@@ -1119,8 +1165,15 @@ function M.get_fuel_table()
       for _, prot in pairs(game.item_prototypes) do
         local fc = prot.fuel_category
         if fc ~= nil then
+          local value = prot.fuel_value
+          -- HACK: make processed-fuel preferrible to nearly everything, coke not wanted
+          if prot.name == 'processed-fuel' then
+            value = value * 100
+          elseif prot.name == 'coke' then
+            value = value / 10
+          end
           --table.insert(fuels, { name=prot.name, val=prot.stack_size * prot.fuel_value, cat=fc })
-          table.insert(fuels, { name=prot.name, val=prot.fuel_value, cat=fc })
+          table.insert(fuels, { name=prot.name, val=value, cat=fc })
         end
       end
     table.sort(fuels, function (a, b) return a.val > b.val end)
@@ -1344,9 +1397,9 @@ function M.scan_prototypes()
     ["lab"]                = "lab", -- "car",
   }
 
-  if settings.global["item-network-service-assemblers"].value then
+  if true or settings.global["item-network-service-assemblers"].value then
     clog("Adding 'assembling-machine' to the list")
-    type_to_service["assembling-machine"] = "general-service" -- "assembling-machine"
+    type_to_service["assembling-machine"] = "assembling-machine"
   end
 
   for _, prot in pairs(game.entity_prototypes) do
@@ -1410,6 +1463,6 @@ end)
 
 -- need to run as soon as 'game' is available
 Event.on_nth_tick(1, M.setup)
---Event.on_init(M.setup)
+Event.on_init(M.setup)
 
 return M

@@ -63,13 +63,27 @@ local function transfer_item_to_inv_level(entity, inv, name, count)
   end
 end
 
+-- hacky replacement for existing fuel
+local promote_fuel = {
+  wood = 'coal',
+  coal = 'processed-fuel',
+}
+
+--[[
+Add fuel to the entity.
+
+If empty, we pick the best available fuel and add that.
+If non-empty, we top off the current fuel.
+
+Ideally, the amount of fuel would be enough for 3 * service period ticks.
+]]
 local function service_refuel(entity, inv)
   if inv.is_empty() then
     local fuel_name, n_avail = GlobalState.get_best_available_fuel(entity)
     if fuel_name == nil or n_avail == nil then
       return
     end
-    --clog("best fuel for %s is %s and we have %s", entity.name, fuel_name, n_avail)
+    --sclog("best fuel for %s is %s and we have %s", entity.name, fuel_name, n_avail)
     if n_avail > 0 then
       local prot = game.item_prototypes[fuel_name]
       local n_add = (#inv * prot.stack_size) -- - 12
@@ -84,6 +98,15 @@ local function service_refuel(entity, inv)
         local n_need = inv.get_insertable_count(fuel) - 12
         -- start requesting when fuel is below 1/2 stack
         if n_need > fuel_prot.stack_size / 2 then
+          local promo = promote_fuel[fuel]
+          if promo ~= nil then
+            local fcnt = GlobalState.get_item_count(promo)
+            if fcnt > 10 then
+              GlobalState.items_inv_to_net(inv)
+              transfer_item_to_inv(entity, inv, promo, math.min(fcnt, 20))
+              return
+            end
+          end
           transfer_item_to_inv(entity, inv, fuel, n_need)
         end
       end
@@ -92,42 +115,67 @@ local function service_refuel(entity, inv)
 end
 
 function M.refuel_entity(entity)
+  -- add fuel
   local f_inv = entity.get_fuel_inventory()
   if f_inv ~= nil then
     service_refuel(entity, f_inv)
   end
+  -- remove burnt results with no limits
+  local br_inv = entity.get_burnt_result_inventory()
+  if br_inv ~= nil and not br_inv.is_empty() then
+    GlobalState.items_inv_to_net(br_inv)
+  end
 end
 
-----
-local function service_recipe_inv(entity, inv, recipe, factor)
-  if recipe ~= nil and inv ~= nil then
-
-    local rtime = recipe.energy / entity.crafting_speed -- time to finish one recipe
-
-    local svc_ticks = 60 * 60 -- assume 60 seconds if no info
-    local info = GlobalState.entity_info_get(entity.unit_number)
-    if info ~= nil and info.service_tick_delta ~= nil then
-      svc_ticks = info.service_tick_delta
+local function transfer_fluid_to_entity(entity, name, n_want)
+  if n_want > 0 then
+    local n_avail, temp = GlobalState.get_fluid_count(name, nil)
+    if n_avail > 0 then
+      local n_trans = math.min(n_want, n_avail)
+      local n_added = entity.insert_fluid( { name=name, amount=n_trans })
+      if n_added > 0 then
+        print(string.format("fluid: want=%s avail=%s added=%s", n_want, n_avail, n_added))
+        GlobalState.set_fluid_count(name, temp, n_avail - n_added)
+      end
     end
+  end
+end
+----
+
+--[[
+Service a recipe, adding stuff to the inventory.
+Note that get_insertable_count() doesn't work on assembling maching ingredients, as it
+will assume 1 stack.
+
+@info is the entity info
+@entity is info.entity
+@inv is the input inventory
+@recipe is the recipe
+]]
+local function service_recipe_inv(info, entity, inv, recipe)
+  if recipe ~= nil and inv ~= nil then
     -- calculate the recipe multiplier
+    local rtime = recipe.energy / entity.crafting_speed -- time to finish one recipe
+    local svc_ticks = info.service_tick_delta or (60 * 60) -- assume 60 seconds on first service
     local mult = math.ceil(svc_ticks / (rtime * 60))
 
-    local needed = {} -- key=item, val=amount
-    for _, ing in ipairs(recipe.ingredients) do
-      needed[ing.name] = math.floor(math.max(ing.amount, ing.amount * mult))
-    end
-
     local contents = inv.get_contents()
-    --print(string.format("recipe: %s [%s] need=%s have=%s", entity.name, entity.unit_number, serpent.line(needed), serpent.line(contents)))
-
-    for name, amount in pairs(needed) do
-      -- only handle items here
-      local prot = game.item_prototypes[name]
-      if prot ~= nil then
-        local n_have = contents[name] or 0
-        local n_want = math.min(inv.get_insertable_count(name), amount)
-        if n_have < n_want then
-          transfer_item_to_inv(entity, inv, name, n_want - n_have)
+    for _, ing in ipairs(recipe.ingredients) do
+      if ing.type == "item" then
+        -- need enough for at least 1 recipe
+        local n_rmult = math.floor(math.max(ing.amount, ing.amount * mult))
+        local n_avail = GlobalState.get_item_count(ing.name)
+        local n_have = (contents[ing.name] or 0)
+        local n_want = n_rmult - n_have
+        local n_trans = math.min(n_avail, n_want)
+        if n_trans > 0 then
+          local n_added = inv.insert{ name=ing.name, count=n_trans }
+          if n_added > 0 then
+            GlobalState.increment_item_count(ing.name, -n_added)
+          end
+        elseif n_want > 0 and n_have < ing.amount then
+          -- only report shortage for one recipe instance
+          GlobalState.missing_item_set(ing.name, entity.unit_number, ing.amount - n_have)
         end
       end
     end
@@ -156,7 +204,7 @@ local function service_reload_ammo_type(entity, inv, ammo_categories)
     end
   else
     -- top off existing ammo
-    for name, count in pairs(inv.get_contents()) do
+    for name, _ in pairs(inv.get_contents()) do
       transfer_item_to_inv_max(entity, inv, name)
     end
   end
@@ -164,6 +212,7 @@ end
 
 local function service_reload_ammo_car(entity, inv)
   if inv == nil then
+    clog("%s: weird. no ammo inv", entity.name)
     return
   end
   -- sanity check: no guns means no ammo
@@ -214,25 +263,7 @@ function M.update_entity(info)
   -- handle refueling
   M.refuel_entity(entity)
 
-  if entity.type == "assembling-machine" then
-    --clog("Service [%s] %s status=%s", entity.unit_number, entity.name, entity.status)
-    local old_status = entity.status
-
-    -- move output items to net
-    local out_inv = entity.get_output_inventory()
-    GlobalState.items_inv_to_net_with_limits(out_inv)
-
-    local inp_inv = entity.get_inventory(defines.inventory.assembling_machine_input)
-
-    -- was full and still can't send off items, so shut off, return inputs
-    if not out_inv.is_empty() and old_status == defines.entity_status.full_output then
-      -- full output, no room in net,
-      GlobalState.items_inv_to_net(inp_inv)
-    else
-      service_recipe_inv(entity, inp_inv, entity.get_recipe(), 2)
-    end
-    -- will stop refill if status becomes "output full"
-  elseif entity.type == "car" then
+  if entity.type == "car" then
     service_reload_ammo_car(entity, entity.get_inventory(defines.inventory.car_ammo))
 
     if info.car_output_inv == true then
@@ -248,6 +279,182 @@ function M.update_entity(info)
   end
 
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+end
+
+--[[
+  Search all connected entities, looking for "network-tank-requester"
+
+  @visited is a table of all unit_numbers that we have visited key=unit_number,val=entity|false
+]]
+local function search_for_ntr(fluid_name, fluidbox, sysid, visited)
+  print(string.format("search_for_ntr %s %s %s", fluid_name, sysid, serpent.line(visited)))
+  -- iterate over fluidboxes
+  for idx = 1, #fluidbox do
+    -- only care about same system ids
+    local sid = fluidbox.get_fluid_system_id(idx)
+    if sid == sysid then
+      local fca = fluidbox.get_connections(idx)
+      for _, fc in ipairs(fca) do
+        local oo = fc.owner
+        local oun = oo.unit_number
+        if visited[oun] == nil then
+          visited[oun] = true
+          if oo.name == "network-tank-requester" then
+            local info = GlobalState.entity_info_get(oun)
+            if info ~= nil and info.config ~= nil then
+              if info.config.type == "take" and info.config.fluid ~= fluid_name then
+                print(string.format(" NEED TO RESET %s", serpent.line(info)))
+                info.config.type = "auto"
+                GlobalState.queue_reservice(info)
+              end
+            end
+          else
+            search_for_ntr(fluid_name, fc, sysid, visited)
+          end
+        end
+      end
+    end
+  end
+end
+
+local flush_whole_system = false
+
+--[[
+  The recipe just changed.
+]]
+local function handle_recipe_changed(info, entity, old_recipe, new_recipe)
+  --print(string.format("[%s] %s: RECIPE CHANGED %s => %s", info.unit_number, entity.name, old_recipe, new_recipe))
+
+  local fluidbox = entity.fluidbox
+
+  if flush_whole_system then
+    -- find any connected "network-tank-requester" and check the fluid vs expected fluid. set config to auto if wrong.
+    for idx = 1, #fluidbox do
+      local visited = {}
+      -- don't visit here again
+      visited[entity.unit_number] = true
+      local fluid_name = fluidbox.get_locked_fluid(idx)
+      if fluid_name ~= nil then
+        local sysid = fluidbox.get_fluid_system_id(idx)
+        if sysid ~= nil then
+          local prot = fluidbox.get_prototype(idx)
+          if prot.object_name ~= 'LuaFluidBoxPrototype' then
+            prot = prot[1]
+          end
+          if prot.production_type == "input" then
+            search_for_ntr(fluid_name, fluidbox, sysid, visited)
+            local cont = fluidbox.get_fluid_system_contents(idx)
+            for k, c in pairs(cont) do
+              if k ~= fluid_name then
+                -- REVISIT: no temperature, so we just dump it
+                fluidbox.flush(idx, k)
+              end
+            end
+          end
+        end
+      end
+    end
+  else
+    -- set any directly-connected "network-tank-requester" to "auto" if the fluid doesn't match
+    for idx = 1, #fluidbox do
+      -- check locked_fluids
+      local locked_fluid = fluidbox.get_locked_fluid(idx)
+      if locked_fluid ~= nil then
+        local prot = fluidbox.get_prototype(idx)
+        if prot.object_name ~= 'LuaFluidBoxPrototype' then
+          prot = prot[1]
+        end
+        if prot.production_type == "input" then
+          local fca = fluidbox.get_connections(idx)
+          for _, fc in ipairs(fca) do
+            if fc.owner.name == "network-tank-requester" then
+              local info = GlobalState.entity_info_get(fc.owner.unit_number)
+              if info ~= nil and info.config ~= nil then
+                if info.config.type == "take" and info.config.fluid ~= locked_fluid then
+                  info.config.type = "auto"
+                  GlobalState.queue_reservice(info)
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+--[[
+  Service an entity of type 'assembling-machine'.
+   - refuel
+   - remove output
+   - add ingredients
+
+Ingredient amounts will follow the service period and time to finish production.
+
+Priority will adjust based on whether the output is full.
+  output empty => longest period
+  output full, no room in net => shut down (remove inputs)
+  output full, all move to net => increase priority
+  output not full => decrease priority
+]]
+function M.service_assembling_machine(info)
+  local entity = info.entity
+  local pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
+
+  -- handle refueling
+  M.refuel_entity(entity)
+
+  --clog("Service [%s] %s status=%s", entity.unit_number, entity.name, entity.status)
+
+  local out_inv = entity.get_output_inventory()
+  local inp_inv = entity.get_inventory(defines.inventory.assembling_machine_input)
+
+  local old_status = entity.status
+  local was_empty = out_inv.is_empty()
+
+  if not was_empty then
+    -- move output items to net
+    GlobalState.items_inv_to_net_with_limits(out_inv)
+  end
+
+  if old_status == defines.entity_status.full_output then
+    if not out_inv.is_empty() then
+      -- was full and still can't send off items, so shut off, return inputs
+      GlobalState.items_inv_to_net(inp_inv)
+      return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+    end
+    -- output is now empty, was full. service more often
+    pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+  elseif was_empty then
+    -- max service period: output was empty, so jump to the max
+    pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+  else
+    -- service less often: wasn't empty or full
+    pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+  end
+
+  -- check for a recipe change
+  local recipe = entity.get_recipe()
+  if recipe ~= nil then
+    local recipe_name = recipe.name
+    if info.recipe_name ~= recipe_name then
+      handle_recipe_changed(info, entity, info.recipe_name, recipe_name)
+      info.recipe_name = recipe_name
+    end
+
+    -- ingredients automatically adjusts to service period
+    service_recipe_inv(info, entity, inp_inv, recipe)
+  end
+  return pri
+end
+
+local function assembling_machine_paste(dst_info, source)
+  print(string.format("[%s] paste", dst_info.unit_number, source.unit_number))
+  GlobalState.assembler_check_recipe(dst_info.entity)
+end
+
+local function assembling_machine_clone(dst_info, src_info)
+  assembling_machine_paste(dst_info, src_info.entity)
 end
 
 -- determine the ore based on the inputs, last_recipe or info.ore_name
@@ -418,7 +625,6 @@ function M.lab_service(info)
     return
   end
 
-  -- REVISIT: load the minimum?
   for _, item in ipairs(entity.prototype.lab_inputs) do
     transfer_item_to_inv_level(entity, inv, item, 10)
   end
@@ -439,6 +645,7 @@ function M.create(entity, tags)
 end
 
 GlobalState.register_service_task("general-service", { create=M.create, service=M.update_entity })
+
 GlobalState.register_service_task("furnace", {
   create=M.create,
   service=M.furnace_update,
@@ -447,6 +654,14 @@ GlobalState.register_service_task("furnace", {
   clone=furnace_clone,
   tag="ore_name",
 })
+
 GlobalState.register_service_task("lab", { create=M.create, service=M.lab_service })
+
+GlobalState.register_service_task("assembling-machine", {
+  create=M.create,
+  paste=assembling_machine_paste,
+  clone=assembling_machine_clone,
+  service=M.service_assembling_machine
+})
 
 return M

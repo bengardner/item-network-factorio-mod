@@ -7,6 +7,7 @@ local UiNetworkItems = require "src.UiNetworkItems"
 local UiChestInventory = require "src.UiChestInventory"
 local clog = require("src.log_console").log
 local auto_player_request = require'src.auto_player_request'
+local constants           = require 'src.constants'
 
 local M = {}
 
@@ -431,6 +432,15 @@ Event.on_event("debug-network-item", function (event)
     end
   end)
 
+local function get_sprite_name(name)
+  if game.item_prototypes[name] ~= nil then
+    return "item/" .. name
+  end
+  if game.fluid_prototypes[name] ~= nil then
+    return "fluid/" .. name
+  end
+end
+
 local function update_player_selected(player)
   if player == nil then
     return
@@ -571,10 +581,13 @@ local function update_player_selected(player)
       ignored_by_interaction = true,
     }
     ]]
-    desc_flow.add {
-      type = "sprite-button",
-      sprite = "item/" .. info.ore_name,
-    }
+    local spname = get_sprite_name(info.ore_name)
+    if spname ~= nil then
+      desc_flow.add {
+        type = "sprite-button",
+        sprite = spname,
+      }
+    end
   end
   if info.requests ~= nil then
     --[[
@@ -607,9 +620,39 @@ local function update_player_selected(player)
       ignored_by_interaction = true,
     }
   end
+  if info.config ~= nil and info.config.type == "take" then
+    local fluid = info.config.fluid
+    if fluid ~= nil then
+      local take_hflow = desc_flow.add {
+        type="table",
+        style="compact_slot_table",
+        column_count = 7,
+        ignored_by_interaction = true,
+      }
+      take_hflow.add {
+        type = "sprite-button",
+        style="transparent_slot",
+        sprite = "fluid/" .. fluid,
+        number = info.config.buffer or 1000,
+      }
+    end
+    desc_flow.add {
+      type="label",
+      caption = string.format("%s", serpent.line(info.config)),
+      ignored_by_interaction = true,
+    }
+    if info.fluid_addave ~= nil then
+      desc_flow.add {
+        type="label",
+        caption = string.format("AddAve %s", math.floor(info.fluid_addave)),
+        ignored_by_interaction = true,
+      }
+    end
+  end
+
   --string.format("[%s] %s", ent.unit_number, ent.localised_name)
   --print(string.format("name=%s type=%s", ent.name, ent.type))
-  if ent.type == "assembling-machine" then
+  if ent.type == "assembling-machine" and ent.name == "mining-depot" then
     print(string.format("name=%s type=%s is_crafting=%s s=%s p=%s",
       ent.name, ent.type,
       ent.is_crafting(),
@@ -618,11 +661,7 @@ local function update_player_selected(player)
     local r = ent.get_recipe()
     if r ~= nil then
       local rtime = r.energy / ent.crafting_speed -- time to finish one recipe
-      local info = GlobalState.entity_info_get(ent.unit_number)
-      local svc_ticks = 60 * 60 -- assume 60 seconds
-      if info ~= nil and info.service_tick_delta ~= nil then
-        svc_ticks = info.service_tick_delta
-      end
+      local svc_ticks = info.service_tick_delta or (60 * 60)
       local rp = game.recipe_prototypes[r.name]
       if rp ~= nil then
         print(string.format("  overload_multiplier=%s", rp.overload_multiplier))
@@ -634,14 +673,51 @@ local function update_player_selected(player)
           60/10 = 6 per minute.  That means we need 6*5=30 items in the input. Anything more is a waste.
           Can be basd on the service time. Minimum is the amount reuired by the recipe.
       ]]
+      local inp_inv = ent.get_inventory(defines.inventory.assembling_machine_input)
+      local item_contents = inp_inv.get_contents()
       local mult = svc_ticks / (rtime * 60)
       local rmult = math.ceil(mult)
+      local have = {}
       print(string.format("  energy=%s time=%s svc=%s mult=%s %s", r.energy, rtime, svc_ticks, mult, rmult))
       local needed = {} -- key=item, val=amount
       for _, ing in ipairs(r.ingredients) do
         needed[ing.name] = math.floor(math.max(ing.amount, ing.amount * rmult))
+        if ing.type == "fluid" then
+          have[ing.name] = ent.get_fluid_count(ing.name)
+        elseif ing.type == "item" then
+          have[ing.name] = item_contents[ing.name] or 0
+        end
       end
-      print(serpent.line(needed))
+      print(string.format("need=%s  have=%s  ing=%s", serpent.line(needed), serpent.line(have), serpent.line(r.ingredients)))
+    end
+  end
+
+  if false then -- need 'pipe-connectable' entity
+    local nn = ent.neighbours
+    if nn ~= nil then
+      print(string.format("neighbours: %s", serpent.line(nn)))
+    end
+  end
+
+  local fuel_inv = ent.get_fuel_inventory()
+  local burner = ent.burner
+  if fuel_inv ~= nil and burner ~= nil then
+    local eprot = game.entity_prototypes[ent.name]
+    print(string.format("[%s] %s [%s] %s energy=%s/%s/%s/%s heat=%s heat_capacity=%s remaining_burning_fuel=%s",
+      ent.unit_number, ent.name, ent.type,
+      serpent.line(fuel_inv.get_contents()),
+      ent.energy, eprot.energy_usage, eprot.max_energy_usage,  eprot.max_energy_production,
+      burner.heat,
+      burner.heat_capacity,
+      burner.remaining_burning_fuel
+    ))
+    local max_energy = eprot.max_energy_usage --math.max(ent.energy, eprot.max_energy_usage)
+    local cur_burn = burner.currently_burning
+    if cur_burn ~= nil then
+      local prot = game.item_prototypes[cur_burn.name]
+      local fe = prot.fuel_value / max_energy
+      print(string.format(" - [%s] %s => %s  sec=%s/%s", cur_burn.name, cur_burn.type, prot.fuel_value,
+        fe, fe / 60))
     end
   end
 end
@@ -657,5 +733,16 @@ local function update_all_players_selected()
   end
 end
 Event.on_nth_tick(60, update_all_players_selected)
+
+-- schedule the entity service really soon if the recipe changed since the last service
+local function my_on_gui_closed(event)
+  local entity = event.entity
+  if event.gui_type == defines.gui_type.entity and entity ~= nil and entity.type == "assembling-machine" then
+    GlobalState.assembler_check_recipe(entity)
+  end
+end
+
+-- Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
+Event.on_event(defines.events.on_gui_closed, my_on_gui_closed)
 
 return M

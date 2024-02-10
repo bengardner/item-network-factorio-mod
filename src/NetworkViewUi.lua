@@ -270,10 +270,10 @@ local function limit_set_edit_item(edit_flow, item_name, item_temp)
       edit_flow.new_limit.text = string.format("%s", item_limit)
       edit_flow.new_limit.select(1, 0)
     else
-      prot = game.fluid_prototypes[item_name]
-      if prot ~= nil then
+      local fprot = game.fluid_prototypes[item_name]
+      if fprot ~= nil then
         if item_temp == nil then
-          item_temp = prot.default_temperature
+          item_temp = fprot.default_temperature
         end
         local key = GlobalState.fluid_temp_key_encode(item_name, item_temp)
         local item_limit = GlobalState.get_limit(key)
@@ -292,7 +292,7 @@ end
 -- the selection change. refresh the current limit text box
 function M.on_limit_item_elem_changed(event, element)
   local player, edit_flow = limit_event_prep(event)
-  if player == nil then
+  if player == nil or edit_flow == nil then
     return
   end
 
@@ -302,7 +302,7 @@ end
 -- the selection change. refresh the current limit text box
 function M.on_limit_fluid_elem_changed(event, element)
   local player, edit_flow = limit_event_prep(event)
-  if player == nil then
+  if player == nil or edit_flow == nil then
     return
   end
 
@@ -365,7 +365,7 @@ end
 
 function M.on_limit_elem_type(event, element)
   local player, edit_flow = limit_event_prep(event)
-  if player == nil then
+  if player == nil or edit_flow == nil then
     return
   end
 

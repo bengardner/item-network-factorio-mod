@@ -89,7 +89,7 @@ It replaces the dialog with one of our own.
 
 @is_requester true=requester, other=net-tank
 ]]
-local function network_tank_on_gui_opened(player, entity, is_requester)
+local function network_tank_on_gui_opened(player, entity, cfg)
 
   local self, main_flow, tank_info = common_on_gui_opened(player, entity)
   if self == nil then
@@ -110,9 +110,7 @@ local function network_tank_on_gui_opened(player, entity, is_requester)
     default_temp = tank_info.config.temperature
   end
 
-  if is_requester == true then
-    default_is_take = true
-  end
+  local is_requester = (cfg.type == "output")
 
   local elems = self.elems
 

@@ -300,7 +300,7 @@ local function log_ammo_stuff()
 
       local at = prot.get_ammo_type()
       if at ~= nil then
-        clog(" - category %s", tt, serpent.line(at.category))
+        clog(" - category %s", serpent.line(at.category))
         if at.category == 'bullet' then
           local damage = recurse_find_damage(at.action)
           if damage ~= nil and type(damage.amount) == "number" then
@@ -416,7 +416,7 @@ Event.on_event("debug-network-item", function (event)
     -- log_ammo_stuff()
     --[[ player_index, input_name, cursor_position, ]]
     local player = game.get_player(event.player_index)
-    if player ~= nil and player.selected then
+    if player ~= nil and player.selected ~= nil then
       local ent = player.selected
       local unum = ent.unit_number
       clog("EVENT %s ent=[%s] %s %s", serpent.line(event), unum, ent.name, ent.type)
@@ -488,13 +488,31 @@ local function update_player_selected(player)
     ignored_by_interaction = true,
   }
 
-  hdr_frame.add {
-    type="label",
-    name="MYSUPERTEST-text",
-    caption = ent.localised_name,
-    style = "tooltip_heading_label",
-    ignored_by_interaction = true,
-  }
+  if ent.type == "entity-ghost" then
+    hdr_frame.add {
+      type="label",
+      name="MYSUPERTEST-text-ghost",
+      caption = 'Ghost:',
+      style = "tooltip_heading_label",
+      ignored_by_interaction = true,
+    }
+    hdr_frame.add {
+      type="label",
+      name="MYSUPERTEST-text",
+      caption = ent.ghost_localised_name,
+      style = "tooltip_heading_label",
+      ignored_by_interaction = true,
+    }
+    else
+    hdr_frame.add {
+      type="label",
+      name="MYSUPERTEST-text",
+      caption = ent.localised_name,
+      style = "tooltip_heading_label",
+      ignored_by_interaction = true,
+    }
+    end
+
 
   -- start the description area
   local desc_flow = vflow.add {
@@ -649,6 +667,41 @@ local function update_player_selected(player)
       }
     end
   end
+  if ent.name == "entity-ghost" then
+    local is_ok = true
+    if not ent.surface.can_place_entity({
+      name = ent.ghost_name,
+      position = ent.position,
+      direstion = ent.direction,
+      })
+    then
+      desc_flow.add {
+        type="label",
+        caption = "Blocked!",
+        ignored_by_interaction = true,
+      }
+      is_ok = false
+    end
+
+    for _, ing in ipairs(ent.ghost_prototype.items_to_place_this) do
+      local cnt = GlobalState.get_item_count(ing.name)
+      if cnt < ing.count then
+        desc_flow.add {
+          type="label",
+          caption = string.format("Missing: %s x %s", ing.count, ing.name),
+          ignored_by_interaction = true,
+        }
+        is_ok = false
+      end
+    end
+    if is_ok then
+      desc_flow.add {
+        type="label",
+        caption = "Queued for build",
+        ignored_by_interaction = true,
+      }
+    end
+  end
 
   --string.format("[%s] %s", ent.unit_number, ent.localised_name)
   --print(string.format("name=%s type=%s", ent.name, ent.type))
@@ -692,6 +745,9 @@ local function update_player_selected(player)
     end
   end
 
+  if ent.name == "entity-ghost" then
+  end
+
   if false then -- need 'pipe-connectable' entity
     local nn = ent.neighbours
     if nn ~= nil then
@@ -699,25 +755,27 @@ local function update_player_selected(player)
     end
   end
 
-  local fuel_inv = ent.get_fuel_inventory()
-  local burner = ent.burner
-  if fuel_inv ~= nil and burner ~= nil then
-    local eprot = game.entity_prototypes[ent.name]
-    print(string.format("[%s] %s [%s] %s energy=%s/%s/%s/%s heat=%s heat_capacity=%s remaining_burning_fuel=%s",
-      ent.unit_number, ent.name, ent.type,
-      serpent.line(fuel_inv.get_contents()),
-      ent.energy, eprot.energy_usage, eprot.max_energy_usage,  eprot.max_energy_production,
-      burner.heat,
-      burner.heat_capacity,
-      burner.remaining_burning_fuel
-    ))
-    local max_energy = eprot.max_energy_usage --math.max(ent.energy, eprot.max_energy_usage)
-    local cur_burn = burner.currently_burning
-    if cur_burn ~= nil then
-      local prot = game.item_prototypes[cur_burn.name]
-      local fe = prot.fuel_value / max_energy
-      print(string.format(" - [%s] %s => %s  sec=%s/%s", cur_burn.name, cur_burn.type, prot.fuel_value,
-        fe, fe / 60))
+  if false then -- fuel debug
+    local fuel_inv = ent.get_fuel_inventory()
+    local burner = ent.burner
+    if fuel_inv ~= nil and burner ~= nil then
+      local eprot = game.entity_prototypes[ent.name]
+      print(string.format("[%s] %s [%s] %s energy=%s/%s/%s/%s heat=%s heat_capacity=%s remaining_burning_fuel=%s",
+        ent.unit_number, ent.name, ent.type,
+        serpent.line(fuel_inv.get_contents()),
+        ent.energy, eprot.energy_usage, eprot.max_energy_usage,  eprot.max_energy_production,
+        burner.heat,
+        burner.heat_capacity,
+        burner.remaining_burning_fuel
+      ))
+      local max_energy = eprot.max_energy_usage --math.max(ent.energy, eprot.max_energy_usage)
+      local cur_burn = burner.currently_burning
+      if cur_burn ~= nil then
+        local prot = game.item_prototypes[cur_burn.name]
+        local fe = prot.fuel_value / max_energy
+        print(string.format(" - [%s] %s => %s  sec=%s/%s", cur_burn.name, cur_burn.type, prot.fuel_value,
+          fe, fe / 60))
+      end
     end
   end
 end

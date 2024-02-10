@@ -5,7 +5,7 @@ local NetworkViewUi = require "src.NetworkViewUi"
 local UiConstants = require "src.UiConstants"
 local Event = require('__stdlib__/stdlib/event/event')
 local util = require("util") -- from core/lualib
-local constants = require("constants")
+local constants = require("src.constants")
 local clog = require("src.log_console").log
 
 local M = {}
@@ -29,7 +29,7 @@ local function generic_create_handler(event)
 
   local svc_func = GlobalState.get_service_task(service_type)
   if svc_func == nil then
-    clog("ERROR: no def for %s", service_type)
+    --clog("ERROR: no def for %s", service_type)
     return
   end
 
@@ -37,7 +37,7 @@ local function generic_create_handler(event)
   if type(svc_func.create) == "function" then
     svc_func.create(entity, event.tags)
   else
-    clog("ERROR: no create for %s", entity.name)
+    --clog("ERROR: no create for %s", entity.name)
   end
 end
 
@@ -150,8 +150,16 @@ function M.on_entity_died(event)
 end
 
 function M.on_marked_for_deconstruction(event)
+  local ent = event.entity
   -- put any fluids or items in the network
-  GlobalState.put_contents_in_network(event.entity)
+  GlobalState.put_contents_in_network(ent)
+  --print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
+  if ent.prototype.mineable_properties ~= nil and ent.prototype.mineable_properties.minable == true then
+    -- print(string.format("destroy: TODO [%s] %s @ %s", ent.unit_number, ent.name, serpent.line(ent.position)))
+    --TODO: queue for destruction in 10 seconds
+    --
+    GlobalState.mine_queue(ent)
+  end
 end
 
 function M.on_post_entity_died(event)

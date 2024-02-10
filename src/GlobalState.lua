@@ -137,6 +137,10 @@ function M.inner_setup()
     global.mod.logistic_names = nil -- clean up
   end
 
+  if global.mod.mine_queue == nil then
+    global.mod.mine_queue = {}
+  end
+
   -- scan prototypes to see if we need to rescan all surfaces
   local name_service_map = M.scan_prototypes()
   if true or not tables_have_same_keys(name_service_map, global.name_service_map) then
@@ -177,7 +181,7 @@ local function generic_create_entity(entity, info)
       return
     end
 
-    clog("generic_add [%s] => %s", entity.name, serpent.line(service_type))
+    --clog("generic_add [%s] => %s", entity.name, serpent.line(service_type))
     if type(service_type.create) == "function" then
       service_type.create(entity, info or {})
     else
@@ -870,6 +874,7 @@ function M.get_service_type_for_entity(name)
     M.setup()
     --error("called before init: get_service_type_for_entity")
   end
+  --print(string.format("get_service_type_for_entity: %s", name))
   return global.name_service_map[name]
 end
 
@@ -1073,6 +1078,42 @@ function M.log_entity(title, entity)
   end
 end
 
+-- queue the entity for destruction in 10 seconds
+function M.mine_queue(ent)
+  table.insert(global.mod.mine_queue, { ent, game.tick + 3*60 })
+  -- print(string.format("queue mine %s @ %s", ent.name, serpent.line(ent.position)))
+end
+
+function M.mine_process()
+  local now = game.tick
+  local mine_later = {}
+  local mine_now = {}
+  for _, ee in ipairs(global.mod.mine_queue) do
+    local ent = ee[1]
+    if ent.valid and ent.to_be_deconstructed() then
+      if now >= ee[2] then
+        table.insert(mine_now, ee)
+      else
+        table.insert(mine_later, ee)
+      end
+    end
+  end
+  global.mod.mine_queue = mine_later
+
+  if #mine_now > 0 then
+    local inv = game.create_inventory(16)
+    for _, eee in ipairs(mine_now) do
+      local ent = eee[1]
+      -- print(string.format("delayed mine %s @ %s", ent.name, serpent.line(ent.position)))
+      ent.mine({ inventory=inv })
+    end
+    for name, count in pairs(inv.get_contents()) do
+      M.increment_item_count(name, count)
+    end
+    inv.destroy()
+  end
+end
+Event.on_nth_tick(60, M.mine_process)
 
 --[[
 Automatically configure a chest to request ingredients needed for linked assemblers.
@@ -1392,6 +1433,7 @@ function M.scan_prototypes()
     ["network-tank"]            = "network-tank",
     ["network-tank-provider"]   = "network-tank-provider",
     ["network-tank-requester"]  = "network-tank-requester",
+    ["entity-ghost"]            = "entity-ghost",
   }
 
   -- key=type, val=service_type
@@ -1402,6 +1444,7 @@ function M.scan_prototypes()
     ["ammo-turret"]        = "general-service", -- "ammo-turret",
     ["artillery-turret"]   = "general-service", -- "artillery-turret",
     ["lab"]                = "lab", -- "car",
+    ["entity-ghost"]       = "entity-ghost",
   }
 
   if true or settings.global["item-network-service-assemblers"].value then

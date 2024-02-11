@@ -1101,7 +1101,7 @@ function M.mine_process()
   global.mod.mine_queue = mine_later
 
   if #mine_now > 0 then
-    local inv = game.create_inventory(16)
+    local inv = game.create_inventory(math.min(100, 4 * #mine_now))
     for _, eee in ipairs(mine_now) do
       local ent = eee[1]
       -- print(string.format("delayed mine %s @ %s", ent.name, serpent.line(ent.position)))

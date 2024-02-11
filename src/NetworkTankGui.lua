@@ -92,7 +92,7 @@ It replaces the dialog with one of our own.
 local function network_tank_on_gui_opened(player, entity, cfg)
 
   local self, main_flow, tank_info = common_on_gui_opened(player, entity)
-  if self == nil then
+  if self == nil or main_flow == nil or tank_info == nil then
     return
   end
 
@@ -111,6 +111,9 @@ local function network_tank_on_gui_opened(player, entity, cfg)
   end
 
   local is_requester = (cfg.type == "output")
+  if is_requester then
+    default_is_take = true
+  end
 
   local elems = self.elems
 

@@ -15,12 +15,16 @@ function M.ghost_service(info)
 
   -- check to see if we have enough items in the network
   local item_list = ghost_prototype.items_to_place_this
+  local missing = false
   for _, ing in ipairs(item_list) do
     local cnt = GlobalState.get_item_count(ing.name)
     if cnt < ing.count then
-      -- try again later
-      return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+      GlobalState.missing_item_set(ing.name, entity.unit_number, ing.count - cnt)
+      missing = true
     end
+  end
+  if missing then
+    return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
 
   local _, revived_entity, __ = entity.revive{raise_revive = true}

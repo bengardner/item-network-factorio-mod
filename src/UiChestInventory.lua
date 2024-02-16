@@ -48,6 +48,11 @@ local item_utils = require("src.item_utils")
 local M = {}
 local ChestInv = {}
 
+local ChestInv__metatable = {
+  __index = ChestInv
+}
+script.register_metatable("ChestInv", ChestInv__metatable)
+
 local function gui_get(player_index)
   return GlobalState.get_ui_state(player_index).UiChestInventory
 end
@@ -64,7 +69,7 @@ function M.create(parent, player, entity)
   }
 
   -- set index so we can call self:refresh() or M.refresh(self)
-  setmetatable(self, { __index = ChestInv })
+  setmetatable(self, ChestInv__metatable)
 
   --[[
   GuiElement Layout:

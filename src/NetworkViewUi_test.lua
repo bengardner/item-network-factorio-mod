@@ -745,9 +745,6 @@ local function update_player_selected(player)
     end
   end
 
-  if ent.name == "entity-ghost" then
-  end
-
   if false then -- need 'pipe-connectable' entity
     local nn = ent.neighbours
     if nn ~= nil then

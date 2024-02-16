@@ -8,9 +8,15 @@ local GlobalState = require "src.GlobalState"
 local clog = require("src.log_console").log
 
 local GuiManager = {}
+
+local GuiManager__metatable = {
+  __index = GuiManager
+}
+script.register_metatable("GuiManager", GuiManager__metatable)
+
 function GuiManager.new(name)
   local self = { name=name }
-  return setmetatable(self, { __index = GuiManager })
+  return setmetatable(self, GuiManager__metatable)
 end
 
 function GuiManager:get(player_index)

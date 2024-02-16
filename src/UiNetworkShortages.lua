@@ -23,6 +23,9 @@ local M = {}
 
 local NetLimits = {}
 
+local NetShortage__metatable = { __index = NetLimits }
+script.register_metatable("NetShortage", NetShortage__metatable)
+
 local function gui_get(player_index)
   return GlobalState.get_ui_state(player_index).UiNetworkShortages
 end
@@ -38,7 +41,7 @@ function M.create(parent, player)
   }
 
   -- set index so we can call self:refresh() or M.refresh(self)
-  setmetatable(self, { __index = NetLimits })
+  setmetatable(self, NetShortage__metatable)
 
   local vert_flow = parent.add({
     type = "flow",

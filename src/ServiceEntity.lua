@@ -69,46 +69,78 @@ local promote_fuel = {
   coal = 'processed-fuel',
 }
 
+
+local function service_refuel_empty(entity, inv)
+  local fuel_name, n_avail = GlobalState.get_best_available_fuel(entity)
+  if fuel_name == nil or n_avail == nil then
+    return
+  end
+  --sclog("best fuel for %s is %s and we have %s", entity.name, fuel_name, n_avail)
+  if n_avail > 0 then
+    local prot = game.item_prototypes[fuel_name]
+    local n_add = (#inv * prot.stack_size) -- - 12
+    transfer_item_to_inv(entity, inv, fuel_name, math.min(n_avail, n_add))
+  end
+  return
+end
+
 --[[
 Add fuel to the entity.
 
 If empty, we pick the best available fuel and add that.
-If non-empty, we top off the current fuel.
+ - preferred
+ - not blocked
+
+ If non-empty, we check to make sure the current fuel is not blocked.
+ If blocked, we remove it.
+ If not preferred and we have the preferred fuel, then remove the fuel.
 
 Ideally, the amount of fuel would be enough for 3 * service period ticks.
 ]]
 local function service_refuel(entity, inv)
-  if inv.is_empty() then
-    local fuel_name, n_avail = GlobalState.get_best_available_fuel(entity)
-    if fuel_name == nil or n_avail == nil then
-      return
+  local cfg = GlobalState.fuel_config_get(entity.name)
+  local preferred = cfg.preferred
+
+  -- See if we need to purge non-preferred fuel
+  local purge = false
+  if preferred ~= nil then
+    local n_avail = GlobalState.get_item_count(preferred)
+    if n_avail > 5 then
+      purge = true
     end
-    --sclog("best fuel for %s is %s and we have %s", entity.name, fuel_name, n_avail)
-    if n_avail > 0 then
-      local prot = game.item_prototypes[fuel_name]
-      local n_add = (#inv * prot.stack_size) -- - 12
-      transfer_item_to_inv(entity, inv, fuel_name, math.min(n_avail, n_add))
-    end
-    return
-  else
-    -- try to top off the fuel(s)
-    for fuel, _ in ipairs(inv.get_contents()) do
-      local fuel_prot = game.item_prototypes[fuel]
-      if fuel_prot ~= nil then
-        local n_need = inv.get_insertable_count(fuel) - 12
-        -- start requesting when fuel is below 1/2 stack
-        if n_need > fuel_prot.stack_size / 2 then
-          local promo = promote_fuel[fuel]
-          if promo ~= nil then
-            local fcnt = GlobalState.get_item_count(promo)
-            if fcnt > 10 then
-              GlobalState.items_inv_to_net(inv)
-              transfer_item_to_inv(entity, inv, promo, math.min(fcnt, 20))
-              return
-            end
-          end
-          transfer_item_to_inv(entity, inv, fuel, n_need)
+  end
+
+  -- remove unwanted fuel
+  local contents = inv.get_contents()
+  for fuel, count in pairs(contents) do
+    -- if blocked or we are purging and the fuel isn't preferred
+    if cfg[fuel] == true or (purge and fuel ~= preferred) then
+      local n_taken = inv.remove({name=fuel, count=count})
+      if n_taken > 0 then
+        GlobalState.increment_item_count(fuel, n_taken)
+        if n_taken == count then
+          contents[fuel] = nil
+        else
+          contents[fuel] = count - n_taken
         end
+      end
+    end
+  end
+
+  -- We might have just removed all fuel
+  if next(contents) == nil then
+    service_refuel_empty(entity, inv)
+    return
+  end
+
+  -- try to top off existing fuel(s)
+  for fuel, count in pairs(contents) do
+    local fuel_prot = game.item_prototypes[fuel]
+    if fuel_prot ~= nil then
+      local n_need = inv.get_insertable_count(fuel) - 12
+      -- start requesting when fuel is below 1/2 stack
+      if n_need > fuel_prot.stack_size / 2 then
+        transfer_item_to_inv(entity, inv, fuel, n_need)
       end
     end
   end
@@ -457,6 +489,17 @@ local function assembling_machine_clone(dst_info, src_info)
   assembling_machine_paste(dst_info, src_info.entity)
 end
 
+local ore_to_furnce_recipe
+
+--[[
+Determine the recipe name based on ore based on the inputs, last_recipe or info.ore_name
+]]
+function M.furnace_get_ore_recipe(ore_name)
+  local recipe_name = GlobalState.furnace_get_ore_recipe(ore_name)
+  -- go with whatever was last configured (inputs and outputs are empty)
+  return info.ore_name
+end
+
 -- determine the ore based on the inputs, last_recipe or info.ore_name
 function M.furnace_get_ore(info)
   local entity = info.entity
@@ -481,6 +524,41 @@ function M.furnace_get_ore(info)
   return info.ore_name
 end
 
+--[[
+  Get the required refill level.
+]]
+function M.furnace_get_ore_count(info)
+  if info.ore_name == nil then
+    return nil
+  end
+  local recipe = GlobalState.furnace_get_ore_recipe(info.ore_name)
+  if recipe == nil then
+    return nil
+  end
+
+  local rtime = recipe.energy / info.entity.crafting_speed -- time to finish one recipe
+  local svc_ticks = info.service_tick_delta or (10 * 60) -- assume 60 seconds on first service
+  local mult = math.ceil(svc_ticks / (rtime * 60))
+
+  local ing = recipe.ingredients[1]
+  --print(string.format("Furnace: name=%s amount=%s mult=%s", ing.name, ing.amount, mult))
+  return ing.amount * mult
+end
+
+--[[
+This services a furnace.
+ - adds fuel
+ - removes burnt results
+ - removes output
+ - adds ore
+
+NOTE that we can't get the current recipe.
+Determining the ore to add:
+ - same ore(s) as is currently present in the input
+   - record in info.ore_name
+ - use info.ore_name
+ - check the output
+]]
 function M.furnace_update(info)
   local entity = info.entity
 
@@ -525,7 +603,14 @@ function M.furnace_update(info)
   end
 
   if info.ore_name ~= nil then
-    transfer_item_to_inv_max(entity, inv_src, info.ore_name)
+    local ore_count = M.furnace_get_ore_count(info)
+    if ore_count ~= nil then
+      --print(string.format("ore level: %s %s", info.ore_name, ore_count))
+      transfer_item_to_inv_level(entity, inv_src, info.ore_name, ore_count)
+    else
+      --print(string.format("ore max: %s", info.ore_name))
+      transfer_item_to_inv_max(entity, inv_src, info.ore_name)
+    end
   end
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
@@ -625,7 +710,10 @@ function M.lab_service(info)
     return
   end
 
+  -- try to load each lib_input at a minimum level
+  -- clog("lab inputs: %s", serpent.line(entity.prototype.lab_inputs))
   for _, item in ipairs(entity.prototype.lab_inputs) do
+    -- want to check force.technologies, but that is not accurate
     transfer_item_to_inv_level(entity, inv, item, 10)
   end
 

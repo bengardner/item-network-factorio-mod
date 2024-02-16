@@ -77,4 +77,7 @@ M.NT_CONFIRM_EVENT = "2aeb6458481cb17d443e0743858eec78"
 M.NT_CANCEL_EVENT = "ccd188f96dbd5d80ead57ac11f2a4315"
 M.NT_BTN_AUTO = "item_network.tank.btn_auto"
 
+M.NETFUEL_SELECT_ITEM = "item_network.fuel.preferred_select"
+M.NETFUEL_BLOCK_ITEM = "item_network.fuel.blocked_select"
+
 return M

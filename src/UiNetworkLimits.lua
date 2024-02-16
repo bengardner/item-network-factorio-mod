@@ -25,6 +25,9 @@ local M = {}
 
 local NetLim = {}
 
+local NetLimit__metatable = { __index = NetLim }
+script.register_metatable("NetLimit", NetLimit__metatable)
+
 local function gui_get(player_index)
   return GlobalState.get_ui_state(player_index).UiNetworkLimits
 end
@@ -41,7 +44,7 @@ function M.create(parent, player, show_title)
   }
 
   -- set index so we can call self:refresh() or M.refresh(self)
-  setmetatable(self, { __index = NetLim })
+  setmetatable(self, NetLimit__metatable)
 
   local vert_flow = parent.add({
     type = "flow",

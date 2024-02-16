@@ -141,6 +141,12 @@ function M.inner_setup()
     global.mod.mine_queue = {}
   end
 
+  -- used to configure the preferred fuels for an entity
+  -- key=entity name, val={ preferred=name, blocked={ name=true }}
+  if global.mod.fuel_config == nil then
+    global.mod.fuel_config = {}
+  end
+
   -- scan prototypes to see if we need to rescan all surfaces
   local name_service_map = M.scan_prototypes()
   if true or not tables_have_same_keys(name_service_map, global.name_service_map) then
@@ -405,6 +411,7 @@ function M.remove_old_ui()
       end
     end
   end
+
 end
 
 -------------------------------------------------------------------------------
@@ -1207,23 +1214,25 @@ function M.auto_network_chest(entity)
   return requests, provides
 end
 
+-------------------------------------------------------------------------------
+
 function M.get_fuel_table()
   if global.fuel_table == nil then
     local fuels = {} -- array { name=name, val=energy per stack, cat=category }
-      for _, prot in pairs(game.item_prototypes) do
-        local fc = prot.fuel_category
-        if fc ~= nil then
-          local value = prot.fuel_value
-          -- HACK: make processed-fuel preferrible to nearly everything, coke not wanted
-          if prot.name == 'processed-fuel' then
-            value = value * 100
-          elseif prot.name == 'coke' then
-            value = value / 10
-          end
-          --table.insert(fuels, { name=prot.name, val=prot.stack_size * prot.fuel_value, cat=fc })
-          table.insert(fuels, { name=prot.name, val=value, cat=fc })
+    for _, prot in pairs(game.item_prototypes) do
+      local fc = prot.fuel_category
+      if fc ~= nil and not prot.has_flag("hidden") then
+        local value = prot.fuel_value
+        -- HACK: make processed-fuel preferrible to nearly everything, coke not wanted
+        if prot.name == 'processed-fuel' then
+          value = value * 100
+        elseif prot.name == 'coke' then
+          value = value / 10
         end
+        --table.insert(fuels, { name=prot.name, val=prot.stack_size * prot.fuel_value, cat=fc })
+        table.insert(fuels, { name=prot.name, val=value, cat=fc })
       end
+    end
     table.sort(fuels, function (a, b) return a.val > b.val end)
 
     print(string.format("fuel table: %s", serpent.line(fuels)))
@@ -1232,7 +1241,29 @@ function M.get_fuel_table()
   return global.fuel_table
 end
 
+function M.fuel_config_get(entity_name)
+  return global.mod.fuel_config[entity_name] or {}
+end
+
+function M.fuel_config_set(entity_name, config)
+  -- fuel config has 2 members: preferred:string, blocked:{name=true}
+  global.mod.fuel_config[entity_name] = config
+end
+
 function M.get_best_available_fuel(entity)
+  local config = M.fuel_config_get(entity.name)
+
+  -- check for the preferred fuel first
+  local fuel_name = config.preferred
+  if fuel_name ~= nil then
+    -- TODO: verify that the fuel is still valid
+    local n_avail = M.get_item_count(fuel_name)
+    if n_avail > 0 then
+      -- clog("FUEL: %s preferred fuel %s and we have %s", entity.name, fuel_name, n_avail)
+      return fuel_name, n_avail
+    end
+  end
+
   --clog("called get best fuel on %s", entity.name)
   local bprot = entity.prototype.burner_prototype
   if bprot ~= nil then
@@ -1241,7 +1272,7 @@ function M.get_best_available_fuel(entity)
     local ff = M.get_fuel_table()
     --clog("  fuel tab: %s", serpent.line(ff))
     for _, fuel in ipairs(ff) do
-      if fct[fuel.cat] ~= nil then
+      if fct[fuel.cat] ~= nil and config[fuel.name] ~= true then
         local n_avail = M.get_item_count(fuel.name)
         if n_avail > 0 then
           --clog("FUEL: %s can use %s and we have %s", entity.name, fuel.name, n_avail)
@@ -1448,12 +1479,14 @@ function M.scan_prototypes()
   }
 
   if true or settings.global["item-network-service-assemblers"].value then
-    clog("Adding 'assembling-machine' to the list")
+    -- clog("Adding 'assembling-machine' to the list")
     type_to_service["assembling-machine"] = "assembling-machine"
   end
 
   for _, prot in pairs(game.entity_prototypes) do
-    if prot.type == "logistic-container" then
+    if prot.has_flag("hidden") or not prot.has_flag("player-creation") then
+      -- not ading it
+    elseif prot.type == "logistic-container" then
       --if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
       name_to_service[prot.name] = "logistic-chest-" .. prot.logistic_mode
       --elseif prot.logistic_mode == "active-provider" then
@@ -1499,6 +1532,32 @@ function M.scan_surfaces()
   end
   M.reset_queues()
   clog("[%s] item-network: Scanning complete", game.tick)
+end
+
+--[[
+Determine the recipe name based on ore based on the inputs, last_recipe or info.ore_name
+]]
+function M.furnace_get_ore_recipe(ore_name)
+  local o2fr = global.ore_to_furnce_recipe
+  if o2fr == nil then
+    o2fr = {}
+    global.ore_to_furnce_recipe = o2fr
+
+    -- for a recipe to be valid for a furnace, it must be a "smelting" and have one ingredient.
+    -- assume assembbles will be used for anything else
+    for _, recipe in pairs(game.recipe_prototypes) do
+      if recipe.category == 'smelting' and #recipe.ingredients == 1 then
+        local ing = recipe.ingredients[1]
+        print(string.format("FURNACE RECIPE %s => %s %s", recipe.name, ing.name, ing.amount))
+        o2fr[ing.name] = recipe.name
+      end
+    end
+    print(serpent.line(o2fr))
+  end
+  local recipe_name = o2fr[ore_name]
+  if recipe_name ~= nil then
+    return game.recipe_prototypes[recipe_name]
+  end
 end
 
 -------------------------------------------------------------------------------

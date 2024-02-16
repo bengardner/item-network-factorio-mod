@@ -38,12 +38,23 @@ local M = {}
 
 local NetInv = {}
 
+local NetItems__metatable = { __index = NetInv }
+script.register_metatable("NetItems", NetItems__metatable)
+
 local function gui_get(player_index)
   return GlobalState.get_ui_state(player_index).UiNetworkItems
 end
 
 local function gui_set(player_index, value)
   GlobalState.get_ui_state(player_index).UiNetworkItems = value
+end
+
+function NetInv:get_item_tooltip(item_name, item_count)
+  if self.read_only == true then
+    return item_utils.get_item_plain_tooltip(item_name, item_count)
+  else
+    return item_utils.get_item_inventory_tooltip(item_name, item_count)
+  end
 end
 
 function M.create(parent, player, args)
@@ -58,15 +69,15 @@ function M.create(parent, player, args)
   if args.read_only == true then
     self.id_item = UiConstants.NETITEM_ITEM_RO
     self.id_slot = UiConstants.NETITEM_SLOT_RO
-    self.get_item_tooltip = item_utils.get_item_plain_tooltip
+    --self.get_item_tooltip = item_utils.get_item_plain_tooltip
   else
     self.id_item = UiConstants.NETITEM_ITEM
     self.id_slot = UiConstants.NETITEM_SLOT
-    self.get_item_tooltip = item_utils.get_item_inventory_tooltip
+    --self.get_item_tooltip = item_utils.get_item_inventory_tooltip
   end
 
   -- set index so we can call self:refresh() or M.refresh(self)
-  setmetatable(self, { __index = NetInv })
+  setmetatable(self, NetItems__metatable)
 
   local vert_flow = parent.add({
     type = "flow",
@@ -154,7 +165,7 @@ local function get_sprite_button_def(self, item, event_name)
   local name
   if item.temp == nil then
     name = string.format("%s:%s", self.id_item, item.item)
-    tooltip = self.get_item_tooltip(item.item, item.count)
+    tooltip = self:get_item_tooltip(item.item, item.count)
     tags = { item = item.item }
     sprite_path = "item/" .. item.item
   else
@@ -329,7 +340,7 @@ local function NetInv_click_slot(self, event)
           GlobalState.set_item_count(item_name, network_count - n_moved)
           local count = GlobalState.get_item_count(item_name)
           element.number = count
-          element.tooltip = self.get_item_tooltip(item_name, count)
+          element.tooltip = self:get_item_tooltip(item_name, count)
           something_changed = true
         end
       end

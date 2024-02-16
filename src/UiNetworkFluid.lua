@@ -24,6 +24,9 @@ local M = {}
 
 local NetInv = {}
 
+local NetFluid__metatable = { __index = NetInv }
+script.register_metatable("NetFluid", NetFluid__metatable)
+
 local function gui_get(player_index)
   return GlobalState.get_ui_state(player_index).UiNetworkFluid
 end
@@ -40,7 +43,7 @@ function M.create(parent, player)
   }
 
   -- set index so we can call self:refresh() or M.refresh(self)
-  setmetatable(self, { __index = NetInv })
+  setmetatable(self, NetFluid__metatable)
 
   local vert_flow = parent.add({
     type = "flow",

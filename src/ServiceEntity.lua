@@ -484,15 +484,6 @@ function M.service_assembling_machine(info)
   return pri
 end
 
-local function status_str(st)
-  for k, v in pairs(defines.entity_status) do
-    if v == st then
-      return k
-    end
-  end
-  return st
-end
-
 -- service the rocket silo, which is essentially the same as an assembling machine.
 -- do not attempt to put a satellite in the rocket
 function M.service_rocket_silo(info)
@@ -532,17 +523,6 @@ end
 
 local function assembling_machine_clone(dst_info, src_info)
   assembling_machine_paste(dst_info, src_info.entity)
-end
-
-local ore_to_furnce_recipe
-
---[[
-Determine the recipe name based on ore based on the inputs, last_recipe or info.ore_name
-]]
-function M.furnace_get_ore_recipe(ore_name)
-  local recipe_name = GlobalState.furnace_get_ore_recipe(ore_name)
-  -- go with whatever was last configured (inputs and outputs are empty)
-  return info.ore_name
 end
 
 -- determine the ore based on the inputs, last_recipe or info.ore_name

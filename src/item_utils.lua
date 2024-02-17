@@ -249,4 +249,13 @@ function M.breakdown_stack(stack)
   return stacks
 end
 
+function M.status_str(st)
+  for k, v in pairs(defines.entity_status) do
+    if v == st then
+      return k
+    end
+  end
+  return st
+end
+
 return M

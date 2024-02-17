@@ -334,10 +334,10 @@ local function limit_set_edit_item(self, item_name, item_temp)
       self.elems.item_elem.elem_value = item_name
       set_new_limit(self, item_limit)
     else
-      prot = game.fluid_prototypes[item_name]
-      if prot ~= nil then
+      local fprot = game.fluid_prototypes[item_name]
+      if fprot ~= nil then
         if item_temp == nil then
-          item_temp = prot.default_temperature
+          item_temp = fprot.default_temperature
         end
         local key = GlobalState.fluid_temp_key_encode(item_name, item_temp)
         local item_limit = GlobalState.get_limit(key)

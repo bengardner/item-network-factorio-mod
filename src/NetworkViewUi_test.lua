@@ -416,8 +416,11 @@ Event.on_event("debug-network-item", function (event)
     -- log_ammo_stuff()
     --[[ player_index, input_name, cursor_position, ]]
     local player = game.get_player(event.player_index)
-    if player ~= nil and player.selected ~= nil then
-      local ent = player.selected
+    if player == nil then
+      return
+    end
+    local ent = player.selected
+    if ent ~= nil then
       local unum = ent.unit_number
       clog("EVENT %s ent=[%s] %s %s", serpent.line(event), unum, ent.name, ent.type)
       local info = GlobalState.entity_info_get(unum)

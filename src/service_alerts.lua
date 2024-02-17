@@ -62,8 +62,8 @@ local function service_alerts()
     for _, xxx in pairs(alerts) do
       for _, alert_array in pairs(xxx) do
         for _, alert in ipairs(alert_array) do
-          if alert.target ~= nil then
-            local entity = alert.target
+          local entity = alert.target
+          if entity ~= nil then
             -- we only care about ghosts and items that are set to upgrade
             if entity.name == "entity-ghost" or entity.name == "tile-ghost" then
               handle_missing_material(entity, entity.ghost_name)

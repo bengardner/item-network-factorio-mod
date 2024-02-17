@@ -183,8 +183,10 @@ will assume 1 stack.
 @entity is info.entity
 @inv is the input inventory
 @recipe is the recipe
+returns whether we failed to get enough for one recipe
 ]]
 local function service_recipe_inv(info, entity, inv, recipe)
+  local is_short = false
   if recipe ~= nil and inv ~= nil then
     -- calculate the recipe multiplier
     local rtime = recipe.energy / entity.crafting_speed -- time to finish one recipe
@@ -208,10 +210,12 @@ local function service_recipe_inv(info, entity, inv, recipe)
         elseif n_want > 0 and n_have < ing.amount then
           -- only report shortage for one recipe instance
           GlobalState.missing_item_set(ing.name, entity.unit_number, ing.amount - n_have)
+          is_short = true
         end
       end
     end
   end
+  return is_short
 end
 
 -- this never changes
@@ -480,8 +484,49 @@ function M.service_assembling_machine(info)
   return pri
 end
 
+local function status_str(st)
+  for k, v in pairs(defines.entity_status) do
+    if v == st then
+      return k
+    end
+  end
+  return st
+end
+
+-- service the rocket silo, which is essentially the same as an assembling machine.
+-- do not attempt to put a satellite in the rocket
+function M.service_rocket_silo(info)
+  local entity = info.entity
+  local pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
+  local status = entity.status -- item_ingredient_shortage
+
+  --print(string.format("%s: status=%s [%s] pri=%s", entity.name, entity.status, status_str(entity.status), info.service_priority))
+  -- don't change priority while waiting for launch
+  if status ~= defines.entity_status.working then
+    pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
+  end
+
+  local out_inv = entity.get_output_inventory()
+  if out_inv ~= nil then
+    GlobalState.items_inv_to_net_with_limits(out_inv)
+  end
+
+  local recipe = entity.get_recipe()
+  local inp_inv = entity.get_inventory(defines.inventory.assembling_machine_input)
+  if recipe ~= nil and inp_inv ~= nil then
+    -- ingredients automatically adjusts to service period
+    local is_short = service_recipe_inv(info, entity, inp_inv, recipe)
+    -- if we were short AND we were out of ingredients, then increase pri
+    if status == defines.entity_status.item_ingredient_shortage and not is_short then
+      pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
+    end
+  end
+
+  return pri
+end
+
 local function assembling_machine_paste(dst_info, source)
-  print(string.format("[%s] paste", dst_info.unit_number, source.unit_number))
+  --print(string.format("[%s] paste", dst_info.unit_number, source.unit_number))
   GlobalState.assembler_check_recipe(dst_info.entity)
 end
 
@@ -750,6 +795,10 @@ GlobalState.register_service_task("assembling-machine", {
   paste=assembling_machine_paste,
   clone=assembling_machine_clone,
   service=M.service_assembling_machine
+})
+
+GlobalState.register_service_task("rocket-silo", {
+  service=M.service_rocket_silo
 })
 
 return M

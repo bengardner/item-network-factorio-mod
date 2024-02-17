@@ -1476,6 +1476,7 @@ function M.scan_prototypes()
     ["artillery-turret"]   = "general-service", -- "artillery-turret",
     ["lab"]                = "lab", -- "car",
     ["entity-ghost"]       = "entity-ghost",
+    ["rocket-silo"]        = "rocket-silo",
   }
 
   if true or settings.global["item-network-service-assemblers"].value then

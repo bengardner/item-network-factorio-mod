@@ -153,7 +153,7 @@ function M.get_item_shortage_tooltip(item_name, item_count)
   return M.get_item_tooltip(item_name, item_count, "in_nv.item_shortage_btn_tooltip")
 end
 
-function M.get_fluid_tooltip(name, temp, count, template)
+function M.get_fluid_tooltip(name, temp, temp2, count, template)
   assert(template ~= nil, "template cannot be nil")
   local localised_name
   local info = game.fluid_prototypes[name]
@@ -162,24 +162,34 @@ function M.get_fluid_tooltip(name, temp, count, template)
   else
     localised_name = info.localised_name
   end
-  return {
+  local tiptab = {
     template,
     localised_name,
     string.format("%.0f", count),
-    { "format-degrees-c", string.format("%.0f", temp) },
   }
+
+  if temp ~= nil then
+    table.insert(tiptab, { "format-degrees-c", string.format("%.0f", temp) })
+  end
+  if temp2 ~= nil then
+    table.insert(tiptab, { "format-degrees-c", string.format("%.0f", temp2) })
+  end
+  return tiptab
 end
 
 function M.get_fluid_inventory_tooltip(name, temp, count)
-  return M.get_fluid_tooltip(name, temp, count, "in_nv.fluid_sprite_btn_tooltip")
+  return M.get_fluid_tooltip(name, temp, nil, count, "in_nv.fluid_sprite_btn_tooltip")
 end
 
 function M.get_fluid_limit_tooltip(name, temp, count)
-  return M.get_fluid_tooltip(name, temp, count, "in_nv.fluid_limit_btn_tooltip")
+  return M.get_fluid_tooltip(name, temp, nil, count, "in_nv.fluid_limit_btn_tooltip")
 end
 
-function M.get_fluid_shortage_tooltip(name, temp, count)
-  return M.get_fluid_tooltip(name, temp, count, "in_nv.fluid_sprite_btn_tooltip")
+function M.get_fluid_shortage_tooltip(name, count, temp, temp2)
+  if temp2 == nil then
+    return M.get_fluid_tooltip(name, temp, nil, count, "in_nv.fluid_sprite_btn_tooltip")
+  end
+  return M.get_fluid_tooltip(name, temp, temp2, count, "in_nv.fluid2_sprite_btn_tooltip")
 end
 
 function M.filter_name_or_tag(event, pattern)

@@ -18,11 +18,8 @@ function M.setup()
   setup_has_run = true
   M.reread_settings()
 
-  -- clog("*** ietm-network SETUP ***")
   M.inner_setup()
 end
-
---"item-network-infinite-duplicate"
 
 --[[
 Service Queue Revamp.
@@ -85,6 +82,25 @@ Everything starts at priotirty 0 when created/added.
       config = { ... },               -- network-tank config
       contents = { ... },             -- last get_contents() result for logistic Storage chest
     }
+    Revisit:
+     - put all configuration settings under 'config' so that a common copy/paste can be used?
+       - chest requests
+         - name, count, limit
+       - fluid requests
+         - name, temperature, count, limit
+       - preferred recipe (furnaces)
+       - preferred fuel (burner/vehicle)
+       - preferred ammo (turret/artillery/car)
+       - auto config stuff (furnace/assembler)
+     - put all transient state under 'state'
+       - recent_items (auto-provider chest)
+       - contents (storage-chest)
+       - ?
+     - storage chest
+       - sends items to the network after 30 seconds if no content change
+       - build requests satisfied
+     - provider chests (active / passive)
+       -
  ]]
 
 --[[
@@ -126,6 +142,7 @@ function M.inner_setup()
   if global.mod.fluids == nil then
     global.mod.fluids = {}
   end
+  M.normalize_fluids()
   if global.mod.missing_item == nil then
     global.mod.missing_item = {} -- missing_item[item][unit_number] = { game.tick, count }
   end
@@ -369,22 +386,38 @@ function M.missing_item_filter()
 end
 
 -- create a string 'key' for a fluid@temp
-function M.fluid_temp_key_encode(fluid_name, temp)
-  return string.format("%s@%d", fluid_name, math.floor(temp * 1000))
+-- result: "steam@165@500", "steam@165", "steam@"
+function M.fluid_temp_key_encode(fluid_name, temp, temp2)
+  if temp ~= nil then
+    if temp2 ~= nil then
+      return string.format("%s@%d@%d", fluid_name, math.floor(temp * 1000), math.floor(temp2 * 1000))
+    end
+    return string.format("%s@%d", fluid_name, math.floor(temp * 1000))
+  end
+  return fluid_name .. "@"
 end
 
 -- split the key back into the fluid and temp
 function M.fluid_temp_key_decode(key)
-  local idx = string.find(key, "@")
-  if idx ~= nil then
-    return string.sub(key, 1, idx - 1), tonumber(string.sub(key, idx + 1)) / 1000
+  local f = string.gmatch(key, "[^@]+")
+  -- relies on tonumber(nil) returning nil
+  local function conv_num(val)
+    local num = tonumber(val)
+    if num ~= nil then
+      return num / 1000
+    end
   end
-  return key, nil
+  return f(), conv_num(f()), conv_num(f())
 end
 
 -- mark a fluid/temp combo as missing
-function M.missing_fluid_set(name, temp, unit_number, count)
-  local key = M.fluid_temp_key_encode(name, temp)
+function M.missing_fluid_set(name, temp_exact, temp_min, temp_max, unit_number, count)
+  local key
+  if temp_exact ~= nil then
+    key = M.fluid_temp_key_encode(name, temp_exact, nil)
+  else
+    key = M.fluid_temp_key_encode(name, temp_min, temp_max)
+  end
   missing_set(global.mod.missing_fluid, key, unit_number, count)
 end
 
@@ -411,7 +444,6 @@ function M.remove_old_ui()
       end
     end
   end
-
 end
 
 -------------------------------------------------------------------------------
@@ -658,6 +690,33 @@ function M.get_item_count(item_name)
   return global.mod.items[item_name] or 0
 end
 
+-- turn the temperature into a string to avoid floating point errors in the key
+local function normalize_temp(temp)
+  if type(temp) ~= "string" then
+    return string.format("%.2f", temp)
+  end
+  return temp
+end
+
+--[[
+Check to see if a temperature is acceptable based on the parameters.
+  temp_exact is the exact temperature to match. If not nil, then temp must match.
+  temp_min is the minimum temp allowed or nil.
+  temp_max is the maximum temp allowed or nil.
+]]
+function M.fluid_temp_matches(temp, temp_exact, temp_min, temp_max)
+  if temp_exact ~= nil then
+    return (temp == temp_exact)
+  end
+  if temp_min ~= nil and temp < temp_min then
+    return false
+  end
+  if temp_max ~= nil and temp > temp_max then
+    return false
+  end
+  return true
+end
+
 function M.get_fluid_count(fluid_name, temp)
   local fluid_temps = global.mod.fluids[fluid_name]
   if fluid_temps == nil then
@@ -666,11 +725,47 @@ function M.get_fluid_count(fluid_name, temp)
   if temp == nil then
     temp = game.fluid_prototypes[fluid_name].default_temperature
   end
-  return fluid_temps[temp] or 0, temp
+  temp = normalize_temp(temp)
+  return fluid_temps[temp] or 0, tonumber(temp)
+end
+
+-- returns count, name of the first matching fluid
+function M.get_fluid_count_range(fluid_name, temp_exact, temp_min, temp_max)
+  local fluid_temps = global.mod.fluids[fluid_name]
+  if fluid_temps == nil then
+    return 0
+  end
+
+  for stemp, count in pairs(fluid_temps) do
+    if count > 1 then
+      local temp = tonumber(stemp)
+      if M.fluid_temp_matches(temp, temp_exact, temp_min, temp_max) then
+        return count, temp
+      end
+    end
+  end
+  return 0
 end
 
 function M.get_items()
   return global.mod.items
+end
+
+-- change the fluid temperature key to be a string
+function M.normalize_fluids()
+  for fluid_name, fluid_temps in pairs(global.mod.fluids) do
+    local fixes = {}
+    for temp, count in pairs(fluid_temps) do
+      if type(temp) ~= "string" then
+        local stemp = normalize_temp(temp)
+        table.insert(fixes, { temp, stemp, count })
+      end
+    end
+    for _, fix in ipairs(fixes) do
+      fluid_temps[fix[1]] = nil
+      fluid_temps[fix[2]] = fix[3]
+    end
+  end
 end
 
 function M.get_fluids()
@@ -698,6 +793,7 @@ function M.set_fluid_count(fluid_name, temp, count)
   if temp == nil then
     temp = game.fluid_prototypes[fluid_name].default_temperature
   end
+  temp = normalize_temp(temp)
   local ff = global.mod.fluids[fluid_name]
   if ff == nil then
     ff = {}
@@ -794,9 +890,9 @@ function M.resolve_name(name)
     end
   end
 
-  prot = game.entity_prototypes[name]
-  if prot ~= nil then
-    local mp = prot.mineable_properties
+  local eprot = game.entity_prototypes[name]
+  if eprot ~= nil then
+    local mp = eprot.mineable_properties
     if mp.minable and #mp.products == 1 then
       return mp.products[1].name
     end
@@ -1465,6 +1561,7 @@ function M.scan_prototypes()
     ["network-tank-provider"]   = "network-tank-provider",
     ["network-tank-requester"]  = "network-tank-requester",
     ["entity-ghost"]            = "entity-ghost",
+    ["tile-ghost"]              = "tile-ghost",
   }
 
   -- key=type, val=service_type

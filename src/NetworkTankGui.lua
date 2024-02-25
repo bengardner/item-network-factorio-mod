@@ -7,6 +7,15 @@ local GuiManager = require('src.GuiManager')
 local clog = require("src.log_console").log
 local NetworkTankAutoConfig = require("src.NetworkTankAutoConfig")
 
+--[[
+TODO:
+ - customize the Fluid Requester tank to ONLY show the 'request' parts; remove/hide selector
+ - see about changing the GUI to be on the bottom of the existing GUI -- more for chests
+   - can do top/bottom/left/right
+
+]]
+
+
 -- this is the fake metatable - all functions take an instance created via
 -- network_tank_on_gui_opened() as the first parameter.
 local M = {}
@@ -101,6 +110,8 @@ local function network_tank_on_gui_opened(player, entity, cfg)
   local default_buffer = nil
   local default_limit = nil
   local default_temp = nil
+  local default_temp_min
+  local default_temp_max
 
   if tank_info.config ~= nil then
     default_is_take = tank_info.config.type == "take"
@@ -108,7 +119,11 @@ local function network_tank_on_gui_opened(player, entity, cfg)
     default_buffer = tank_info.config.buffer
     default_limit = tank_info.config.limit
     default_temp = tank_info.config.temperature
+    default_temp_min = tank_info.config.minimum_temperature
+    default_temp_max = tank_info.config.maximum_temperature
   end
+
+  -- print(string.format("tankgui [%s] %s: %s", entity.unit_number, entity.name, serpent.line(tank_info.config)))
 
   local is_requester = (cfg.type == "output")
   if is_requester then
@@ -161,18 +176,39 @@ local function network_tank_on_gui_opened(player, entity, cfg)
   elems.fluid_picker.elem_value = default_fluid
 
   elems.temp_flow = elems.request_flow.add({ type = "flow", direction = "horizontal" })
-  elems.temp_flow.add({ type = "label", caption = "Temperature:" })
+
+  elems.temp_flow.add({ type = "label", caption = "Temperature: min" })
   elems.temperature_input = elems.temp_flow.add({
-    name = UiConstants.NT_TEMP_FIELD,
+    name = UiConstants.NT_TEMP_FIELD_MIN,
     type = "textfield",
     numeric = true,
     allow_decimal = false,
     allow_negative = true,
   })
+  elems.temperature_input.style.width = 100
+
+  elems.temp_flow.add({ type = "label", caption = "max" })
+  elems.temperature_input2 = elems.temp_flow.add({
+    name = UiConstants.NT_TEMP_FIELD_MAX,
+    type = "textfield",
+    numeric = true,
+    allow_decimal = false,
+    allow_negative = true,
+  })
+  elems.temperature_input2.style.width = 100
+
   if default_temp ~= nil then
     elems.temperature_input.text = string.format("%s", default_temp)
+    elems.temperature_input2.text = string.format("%s", default_temp)
   end
-  elems.temperature_input.style.width = 100
+  if default_temp_min ~= nil then
+    elems.temperature_input.text = string.format("%s", default_temp_min)
+  end
+  if default_temp_max ~= nil then
+    elems.temperature_input2.text = string.format("%s", default_temp_max)
+  end
+
+  elems.temp_slider = elems.request_flow.add({ type = "slider", minimum_value = 15, maximum_value = 100 })
 
   elems.buffer_flow = elems.request_flow.add({ type = "flow", direction = "horizontal" })
   elems.buffer_flow.add({ type = "label", caption = "Buffer:" })
@@ -225,6 +261,8 @@ local function network_tank_on_gui_opened(player, entity, cfg)
   self.buffer = default_buffer
   self.limit = default_limit
   self.temperature = default_temp
+  self.temperature_min = default_temp_min
+  self.temperature_max = default_temp_max
 
   M.update_input_visibility(self)
 end
@@ -274,15 +312,18 @@ function M.set_default_buffer_and_limit(self)
     else
       limit = Constants.MAX_TANK_SIZE
     end
-    M.set_temperature(self, game.fluid_prototypes[fluid].default_temperature)
+    local def_temp = game.fluid_prototypes[fluid].default_temperature
+    M.set_temperatures(self, def_temp, def_temp)
     M.set_buffer(self, Constants.DEFAULT_TANK_REQUEST)
     M.set_limit(self, limit)
   end
 end
 
-function M.set_temperature(self, temperature)
-  self.temperature = temperature
-  self.elems.temperature_input.text = string.format("%d", temperature)
+function M.set_temperatures(self, temp_min, temp_max)
+  self.temperature_min = temp_min
+  self.temperature_max = temp_max
+  self.elems.temperature_input.text = string.format("%d", temp_min)
+  self.elems.temperature_input2.text = string.format("%d", temp_max)
 end
 
 function M.set_buffer(self, buffer)
@@ -300,7 +341,16 @@ function M.get_config_from_network_tank_ui(self)
   local fluid = self.fluid
   local buffer = self.buffer or 0
   local limit = self.limit or 0
-  local temperature = self.temperature or 0
+  local temperature
+  local temperature_min = self.temperature_min
+  local temperature_max = self.temperature_max
+
+  -- if min/max temps match, then drop them
+  if temperature_min == temperature_max then
+    temperature = temperature_min
+    temperature_min = nil
+    temperature_max = nil
+  end
 
   buffer = math.max(0, math.min(buffer, Constants.MAX_TANK_SIZE))
   limit = math.max(0, limit)
@@ -313,6 +363,8 @@ function M.get_config_from_network_tank_ui(self)
       buffer = buffer,
       limit = limit,
       temperature = temperature,
+      minimum_temperature = temperature_min,
+      maximum_temperature = temperature_max,
     }
     if limit == 0 then
       config.no_limit = true
@@ -371,7 +423,8 @@ function M.auto_config(self, event)
   self.fluid = config.fluid
   self.elems.fluid_picker.elem_value = config.fluid
   M.set_mode_take(self)
-  M.set_temperature(self, config.temperature)
+
+  M.set_temperatures(self, config.minimum_temperature, config.maximum_temperature)
 end
 
 function M.set_mode_give(self)
@@ -405,7 +458,11 @@ Gui.on_elem_changed(UiConstants.NT_FLUID_PICKER, my_mgr:wrap(function (self, eve
   M.set_default_buffer_and_limit(self)
 end))
 
-Gui.on_confirmed(UiConstants.NT_TEMP_FIELD, my_mgr:wrap(function (self, event)
+Gui.on_confirmed(UiConstants.NT_TEMP_FIELD_MIN, my_mgr:wrap(function (self, event)
+  M.try_to_confirm(self)
+end))
+
+Gui.on_confirmed(UiConstants.NT_TEMP_FIELD_MAX, my_mgr:wrap(function (self, event)
   M.try_to_confirm(self)
 end))
 
@@ -417,8 +474,12 @@ Gui.on_confirmed(UiConstants.NT_LIMIT_FIELD, my_mgr:wrap(function (self, event)
   M.try_to_confirm(self)
 end))
 
-Gui.on_text_changed(UiConstants.NT_TEMP_FIELD, my_mgr:wrap(function (self, event)
-  self.temperature = tonumber(event.element.text)
+Gui.on_text_changed(UiConstants.NT_TEMP_FIELD_MIN, my_mgr:wrap(function (self, event)
+  self.temperature_min = tonumber(event.element.text)
+end))
+
+Gui.on_text_changed(UiConstants.NT_TEMP_FIELD_MAX, my_mgr:wrap(function (self, event)
+  self.temperature_max = tonumber(event.element.text)
 end))
 
 Gui.on_text_changed(UiConstants.NT_BUFFER_FIELD, my_mgr:wrap(function (self, event)

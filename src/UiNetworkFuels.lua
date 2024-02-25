@@ -111,12 +111,14 @@ local function get_list_of_items()
     end
   end
 
+  --[[
   for name, ii in pairs(fuel_items) do
     print(string.format("fuel for %s [%s]", name, #ii))
     for _, xx in ipairs(ii) do
       print(string.format("  - %s", serpent.line(xx)))
     end
   end
+  ]]
 
   return fuel_items
 end

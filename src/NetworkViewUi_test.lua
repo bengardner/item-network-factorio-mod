@@ -8,6 +8,8 @@ local UiChestInventory = require "src.UiChestInventory"
 local clog = require("src.log_console").log
 local auto_player_request = require'src.auto_player_request'
 local constants           = require 'src.constants'
+local item_utils          = require 'src.item_utils'
+local NetworkTankAutoConfig = require 'src.NetworkTankAutoConfig'
 
 local M = {}
 
@@ -422,16 +424,16 @@ Event.on_event("debug-network-item", function (event)
     local ent = player.selected
     if ent ~= nil then
       local unum = ent.unit_number
-      clog("EVENT %s ent=[%s] %s %s", serpent.line(event), unum, ent.name, ent.type)
+      print(string.format("EVENT %s ent=[%s] %s %s", serpent.line(event), unum, ent.name, ent.type))
       local info = GlobalState.entity_info_get(unum)
       if info ~= nil then
-        clog(" - %s", serpent.line(info))
+        print(string.format(" - %s", serpent.line(info)))
       end
-      if ent.type == "rocket-silo" then
-        clog("%s recipe=%s allow+copy=%s", ent.name, serpent.line(ent.get_recipe().ingredients), ent.prototype.allow_copy_paste)
-      end
-      auto_player_request.doit(player)
+      --if ent.type == "rocket-silo" then
+      --  clog("%s recipe=%s allow+copy=%s", ent.name, serpent.line(ent.get_recipe().ingredients), ent.prototype.allow_copy_paste)
+      --end
       --request_everything(player)
+      auto_player_request.doit(player)
     end
   end)
 
@@ -659,7 +661,7 @@ local function update_player_selected(player)
     end
     desc_flow.add {
       type="label",
-      caption = string.format("%s", serpent.line(info.config)),
+      caption = string.format("%s", serpent.block(info.config)),
       ignored_by_interaction = true,
     }
     if info.fluid_addave ~= nil then
@@ -668,6 +670,15 @@ local function update_player_selected(player)
         caption = string.format("AddAve %s", math.floor(info.fluid_addave)),
         ignored_by_interaction = true,
       }
+    end
+    local acfg = NetworkTankAutoConfig.auto_config(ent, false)
+    if acfg ~= nil then
+      desc_flow.add {
+        type="label",
+        caption = string.format("auto %s", serpent.line(acfg)),
+        ignored_by_interaction = true,
+      }
+      print(serpent.line(acfg))
     end
   end
   if ent.name == "entity-ghost" then
@@ -709,11 +720,12 @@ local function update_player_selected(player)
   --string.format("[%s] %s", ent.unit_number, ent.localised_name)
   --print(string.format("name=%s type=%s", ent.name, ent.type))
   if ent.type == "assembling-machine" and ent.name == "mining-depot" then
-    print(string.format("name=%s type=%s is_crafting=%s s=%s p=%s",
+    print(string.format("name=%s type=%s is_crafting=%s s=%s p=%s status=%s[%s]",
       ent.name, ent.type,
       ent.is_crafting(),
       ent.crafting_speed,
-      ent.crafting_progress * 100))
+      ent.crafting_progress * 100,
+      ent.status, item_utils.status_str(ent.status)))
     local r = ent.get_recipe()
     if r ~= nil then
       local rtime = r.energy / ent.crafting_speed -- time to finish one recipe
@@ -778,6 +790,19 @@ local function update_player_selected(player)
       end
     end
   end
+
+  if false and ent.type == "furnace" then
+    local recipe = ent.previous_recipe
+    if recipe ~= nil then
+      print(string.format("furnace: %s e=%s s=%s recipe=%s energy=%s ing=%s pro=%s",
+        ent.name, ent.energy, ent.crafting_speed,
+        recipe.name, recipe.energy,
+        serpent.line(recipe.ingredients),
+        serpent.line(recipe.products)))
+    end
+
+    -- need to figure out how long it takes to finish product
+  end
 end
 
 local function on_selected_entity_changed(event)
@@ -802,5 +827,40 @@ end
 
 -- Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
 Event.on_event(defines.events.on_gui_closed, my_on_gui_closed)
+
+
+
+local function my_on_gui_opened(event)
+  if global.test_gui ~= nil then
+    global.test_gui.destroy()
+    global.test_gui = nil
+  end
+  local player = game.players[event.player_index]
+  if player == nil then
+    print(string.format("on_gui_open: typ=%s tis nil", event.gui_type))
+    return
+  end
+  if player.gui == nil then
+    print(string.format("on_gui_open: typ=%s gui is nil", event.gui_type))
+    return
+  end
+  local entity = event.entity
+  if event.gui_type == defines.gui_type.entity and entity ~= nil then
+    print(string.format("on_gui_open: type=%s name=%s unum=%s", event.gui_type, entity.name, entity.unit_number))
+    global.test_gui = player.gui.relative.add({
+      --type = "sprite-button",
+      type = "frame",
+      name = "test-button",
+      --sprite = "item/locomotive",
+      anchor = {
+        gui      = defines.relative_gui_type.container_gui,
+        --gui      = defines.relative_gui_type.additional_entity_info_gui,
+        position = defines.relative_gui_position.right,
+      },
+    })
+  end
+end
+Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
+
 
 return M

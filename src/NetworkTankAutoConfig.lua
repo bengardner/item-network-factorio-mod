@@ -1,5 +1,7 @@
 --[[
 Scans the fluid network of a network-tank to determine the default configuration.
+
+TODO: entity.neighbours should contain a list of connected entities.
 ]]
 local GlobalState = require "src.GlobalState"
 local constants = require "src.constants"
@@ -23,7 +25,7 @@ Check the fluidbox on the entity. We start with a network tank, so there should 
 Search connected fluidboxes to find all filters.
 That gives what the system should contain.
 ]]
-local function search_fluid_system(entity, sysid, visited)
+local function search_fluid_system(entity, sysid, visited, extra_debug)
   if entity == nil or not entity.valid then
     return
   end
@@ -51,7 +53,7 @@ local function search_fluid_system(entity, sysid, visited)
   end
 
   -- scan, locking onto the first fluid_system_id.
-  if debug_fluids then
+  if debug_fluids or extra_debug then
     clog('fluid visiting [%s] name=%s type=%s #fluidbox=%s', unum, entity.name, entity.type, #fluidbox)
   end
   for idx = 1, #fluidbox do
@@ -63,7 +65,7 @@ local function search_fluid_system(entity, sysid, visited)
       local filt = fluidbox.get_filter(idx)
       local pipes = fluidbox.get_pipe_connections(idx)
 
-      if debug_fluids then
+      if debug_fluids or extra_debug then
         clog("   [%s] id=%s capacity=%s fluid=%s filt=%s lock=%s #conn=%s #pipes=%s mining_drill=%s", idx,
           id,
           fluidbox.get_capacity(idx),
@@ -74,6 +76,7 @@ local function search_fluid_system(entity, sysid, visited)
           #pipes, serpent.line(mining_drill))
       end
 
+      -- fluid holds what is currently present
       if fluid ~= nil then
         local tt = visited.contents[fluid.name]
         if tt == nil then
@@ -83,8 +86,22 @@ local function search_fluid_system(entity, sysid, visited)
         tt[fluid.temperature] = (tt[fluid.temperature] or 0) + fluid.amount
       end
 
-      -- FIXME: I can't figure out how to detect that the drill needs "sulfuric-acid",
-      --  so I fake a filter. I don't like to special-case crap. Oh, well.
+      --[[
+        ["uranium-ore"] = {
+          ...
+          minable = {
+            fluid_amount = 10,
+            mining_particle = "stone-particle",
+            mining_time = 2,
+            required_fluid = "sulfuric-acid",
+            result = "uranium-ore"
+          },
+          ..
+        }
+
+      FIXME: have to scan for resources under the drill and see if they require a fluid to mine.
+      For now, just assume if the drill has fluid, then it needs "sulfuric-acid",
+      ]]
       if filt == nil and mining_drill == 'input-output' then
         local sap = game.fluid_prototypes["sulfuric-acid"]
         if sap ~= nil then
@@ -117,7 +134,7 @@ local function search_fluid_system(entity, sysid, visited)
         end
 
         for ci = 1, #conn do
-          search_fluid_system(conn[ci].owner, sysid, visited)
+          search_fluid_system(conn[ci].owner, sysid, visited, extra_debug)
         end
       end
     end
@@ -135,6 +152,8 @@ Example:
     buffer = 10000,
     limit = 0,
     no_limit = true,
+    minimum_temperature = 15,
+    maximum_temperature = 25,
     temperature = 15,
   }
 
@@ -144,7 +163,7 @@ Example:
     no_limit = true,
   }
 ]]
-function M.auto_config(entity)
+function M.auto_config(entity, extra_debug)
   -- sanity check
   if entity == nil or not entity.valid then
     return -- nil
@@ -162,35 +181,34 @@ function M.auto_config(entity)
 
   end
 
-  if debug_fluids then
+  if debug_fluids or extra_debug then
     clog("[%s] auto config %s @ %s", entity.unit_number, entity.name, serpent.line(entity.position))
   end
 
   local sysid = fluidbox.get_fluid_system_id(1)
   local visited = { filter={}, flows={}, contents={} }
 
-  search_fluid_system(entity, sysid, visited)
-  if debug_fluids then
+  search_fluid_system(entity, sysid, visited, extra_debug)
+  if debug_fluids or extra_debug then
     clog(" ==> filt=%s  flow=%s cont=%s", serpent.line(visited.filter), serpent.line(visited.flows), serpent.line(visited.contents))
   end
 
   -- if there are no filters, then we can't auto-config
   if next(visited.filter) == nil then
     --clog("network-tank: AUTO: Connect to a fluid provider or consumer")
-    return -- table.deepcopy(default_config)
+    return
   end
 
   -- if there are multitple filters, then we can't auto-config
   if table_size(visited.filter) ~= 1 then
     --clog("network-tank: AUTO: Too many fluids: %s", serpent.line(visited.filter))
-    -- default to provide
-    return table.deepcopy(default_config)
+    return
   end
 
   -- if there are multiple flow types, then we can't auto-config
   if table_size(visited.flows) ~= 1 then
     --clog("network-tank: AUTO: Too many connections.")
-    return table.deepcopy(default_config)
+    return -- table.deepcopy(default_config)
   end
 
   -- if anything is feeding into the fluid network, then we must be providing
@@ -213,23 +231,29 @@ function M.auto_config(entity)
     return table.deepcopy(default_config)
   end
 
+  -- autoconfig sets a min/max temp instead of an absolute temp
   local config = {
     type = "take",
     fluid = name,
     buffer = constants.DEFAULT_TANK_REQUEST,
     limit = 0,
     no_limit = true,
-    temperature = fluid_proto.default_temperature,
+    minimum_temperature = filt.minimum_temperature,
+    maximum_temperature = filt.maximum_temperature,
+    --temperature = fluid_proto.default_temperature,
   }
 
+--[[
   -- pick a temperature, stick with the default if none available
   local temps = GlobalState.get_fluids()[name]
   if temps ~= nil then
     local max_temp
+    local min_temp
     for temp, _ in pairs(temps) do
-      if temp >= filt.minimum_temperature and temp <= filt.maximum_temperature then
-        if max_temp == nil or temp > max_temp then
-          max_temp = temp
+      local f_temp = tonumber(temp)
+      if f_temp >= filt.minimum_temperature and f_temp <= filt.maximum_temperature then
+        if max_temp == nil or f_temp > max_temp then
+          max_temp = f_temp
         end
       end
     end
@@ -237,7 +261,7 @@ function M.auto_config(entity)
       config.temperature = max_temp
     end
   end
-
+]]
   return config
 end
 

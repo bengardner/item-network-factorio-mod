@@ -114,9 +114,9 @@ local function get_entry_list()
   -- add fluid shortages
   missing = GlobalState.missing_fluid_filter()
   for fluid_key, count in pairs(missing) do
-    local fluid_name, temp = GlobalState.fluid_temp_key_decode(fluid_key)
+    local fluid_name, temp, temp2 = GlobalState.fluid_temp_key_decode(fluid_key)
     if game.fluid_prototypes[fluid_name] ~= nil then
-      table.insert(items, { item = fluid_name, count = count, temp = temp })
+      table.insert(items, { item = fluid_name, count = count, temp = temp, temp2 = temp2 })
     end
   end
   -- sort so that the largest shortages are first
@@ -134,7 +134,7 @@ local function get_sprite_button_def(item)
     tags = { event = UiConstants.NETITEM_ITEM, item = item.item }
     sprite_path = "item/" .. item.item
   else
-    tooltip = item_utils.get_fluid_shortage_tooltip(item.item, item.temp, item.count)
+    tooltip = item_utils.get_fluid_shortage_tooltip(item.item, item.count, item.temp, item.temp2)
     sprite_path = "fluid/" .. item.item
   end
   return {

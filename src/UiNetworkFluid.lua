@@ -116,7 +116,7 @@ local function get_list_of_fluids()
   for fluid_name, fluid_temps in pairs(fluids_to_display) do
     if game.fluid_prototypes[fluid_name] ~= nil then
       for temp, count in pairs(fluid_temps) do
-        table.insert(items, { item = fluid_name, count = count, temp = temp })
+        table.insert(items, { item = fluid_name, count = count, temp = tonumber(temp) })
       end
     end
   end

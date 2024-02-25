@@ -761,7 +761,9 @@ local function service_network_tank_requester(info)
   local limit = config.limit or 5000
   local buffer = config.buffer or 1000
   local fluid = config.fluid
-  local temp = config.temperature
+  local temp_exact = config.temperature
+  local temp_min = config.minimum_temperature
+  local temp_max = config.maximum_temperature
   local fluidbox = entity.fluidbox
   local status = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC -- SAME
 
@@ -770,6 +772,21 @@ local function service_network_tank_requester(info)
   local tank_temp = nil
   local tank_count = 0
   local n_fluid_boxes = 0
+
+  -- check to see if the temperature matches the exact, min, max parameters
+  local function temp_is_ok(ttt)
+    if temp_exact ~= nil and ttt == temp_exact then
+      return true
+    end
+    if temp_min ~= nil and ttt < temp_min then
+      return false
+    end
+    if temp_max ~= nil and ttt > temp_max then
+      return false
+    end
+    return true
+  end
+
 
   for idx = 1, #fluidbox do
     local fluid_instance = fluidbox[idx]
@@ -787,19 +804,25 @@ local function service_network_tank_requester(info)
   end
 
   -- clear the fluid if it doesn't match the config
-  if n_fluid_boxes == 1 and tank_count > 0 and (tank_fluid ~= fluid or tank_temp ~= temp) then
+  if n_fluid_boxes == 1 and tank_count > 0 and (
+    tank_fluid ~= fluid or
+    not GlobalState.fluid_temp_matches(tank_temp, temp_exact, temp_min, temp_max))
+  then
     GlobalState.increment_fluid_count(tank_fluid, tank_temp, tank_count)
     entity.clear_fluid_inside()
     n_fluid_boxes = 0
     tank_count = 0
   end
 
+  -- find a matching fluid
+  local net_count, net_temp = GlobalState.get_fluid_count_range(fluid, temp_exact, temp_min, temp_max)
+
   -- only touch if there is a matching fluid
-  local network_count = GlobalState.get_fluid_count(fluid, temp)
+  -- local network_count = GlobalState.get_fluid_count(fluid, temp)
   config.ave_added = nil
 
   -- how much we the network can give us, less the limit
-  local n_give = math.max(0, network_count - limit)
+  local n_give = math.max(0, net_count - limit)
   local n_take = math.max(0, buffer - tank_count) -- how much space we have in the tank
   local n_transfer = math.floor(math.min(n_give, n_take))
   local new_tank_count = tank_count
@@ -807,10 +830,10 @@ local function service_network_tank_requester(info)
     local added = entity.insert_fluid({
       name = fluid,
       amount = n_transfer,
-      temperature = temp,
+      temperature = net_temp,
     })
     if added > 0 then
-      GlobalState.increment_fluid_count(fluid, temp, -added)
+      GlobalState.increment_fluid_count(fluid, net_temp, -added)
       new_tank_count = new_tank_count + added
     end
   end
@@ -836,7 +859,8 @@ local function service_network_tank_requester(info)
   if n_take > n_give then
     -- register missing only if we don't have any
     if tank_count < 1000 then
-      GlobalState.missing_fluid_set(fluid, temp, info.entity.unit_number, n_take - n_give)
+      -- FIXME: missing
+      GlobalState.missing_fluid_set(fluid, temp_exact, temp_min, temp_max, info.entity.unit_number, n_take - n_give)
     end
     return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end

@@ -525,7 +525,12 @@ local function assembling_machine_clone(dst_info, src_info)
   assembling_machine_paste(dst_info, src_info.entity)
 end
 
--- determine the ore based on the inputs, last_recipe or info.ore_name
+--[[
+Determine the ore based on the inputs, last_recipe or info.ore_name
+ - match whatever is in the input
+ - match ore_name, if set
+ - check output and guess the recipe
+]]
 function M.furnace_get_ore(info)
   local entity = info.entity
   local src_inv = entity.get_inventory(defines.inventory.furnace_source)
@@ -536,17 +541,30 @@ function M.furnace_get_ore(info)
     return item
   end
 
-  -- check previous recipe (check output)
-  local recipe = entity.previous_recipe
-  if recipe ~= nil then
-    for _, ing in ipairs(recipe.ingredients) do
-      info.ore_name = ing.name
-      return ing.name
+  -- go with the current ore_name, if any
+  if info.ore_name ~= nil then
+    return info.ore_name
+  end
+
+  -- See if there is anything in the output and trace it back to the ore
+  local out_inv = entity.get_output_inventory()
+  for item, count in pairs(out_inv.get_contents()) do
+    -- assume the recipe name matches the output
+    local rprots = game.get_filtered_recipe_prototypes({
+      { filter="category", category="smelting" },
+      { filter = "has-product-item", elem_filters = {{filter = "name", name = item}}, mode="and" },
+      { filter="hidden", invert=true, mode="and" }
+    })
+    for k, v in pairs(rprots) do
+      --print(string.format("[%s] [%s] = p=%s i=%s", entity.unit_number, k, serpent.line(v.products), serpent.line(v.ingredients)))
+      if #v.ingredients == 1 then
+        info.ore_name = v.ingredients[1].name
+        return info.ore_name
+      end
     end
   end
 
-  -- go with whatever was last configured (inputs and outputs are empty)
-  return info.ore_name
+  return nil
 end
 
 --[[
@@ -584,7 +602,7 @@ Determining the ore to add:
  - use info.ore_name
  - check the output
 ]]
-function M.furnace_update(info)
+function M.furnace_service(info)
   local entity = info.entity
 
   M.refuel_entity(entity)
@@ -671,7 +689,7 @@ the recipe is checked on service.
 
 local function furnace_paste(dst_info, source)
   --[[
-  When pasting, we can only go off of the inventory in the source.
+  When pasting, we can only go off of the source inventory and info.ore_name.
   ]]
   -- we only handle same-type pasting (furnace to furnace).
   local dest = dst_info.entity
@@ -689,6 +707,7 @@ local function furnace_paste(dst_info, source)
   -- determine the ore -- the furnace may not have been serviced since placing ore
   local ore_name = M.furnace_get_ore(src_info)
   if ore_name == nil or dst_info.ore_name == ore_name then
+    -- no change
     return
   end
 
@@ -702,7 +721,7 @@ local function furnace_paste(dst_info, source)
   GlobalState.items_inv_to_net(dst_ing_inv)
   GlobalState.items_inv_to_net(dest.get_output_inventory())
 
-  -- max out the input ore
+  -- max out the input ore (REVISIT)
   transfer_item_to_inv_max(dest, dst_ing_inv, ore_name)
 
   -- NOTE: if the furnace was smelting something, we will have to
@@ -761,7 +780,7 @@ GlobalState.register_service_task("general-service", { create=M.create, service=
 
 GlobalState.register_service_task("furnace", {
   create=M.create,
-  service=M.furnace_update,
+  service=M.furnace_service,
   paste=furnace_paste,
   refresh_tags=furnace_refresh_tags,
   clone=furnace_clone,

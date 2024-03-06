@@ -20,7 +20,7 @@ M.MAX_PRIORITY = M.QUEUE_COUNT - 2
 M.UNLIMITED = 2000000000 -- "2G"
 
 M.NETWORK_TANK_NAMES = {
-  ["network-tank"] = { gui=true, type="input-output", base_level=0 },       -- configurable
+ -- ["network-tank"] = { gui=true, type="input-output", base_level=0 },       -- configurable
   ["network-tank-requester"] = { gui=true, type="output", base_level=0.5 }, -- from network to pipes
   ["network-tank-provider"] = { gui=false, type="input", base_level=-0.5 }, -- from pipes to network
   }

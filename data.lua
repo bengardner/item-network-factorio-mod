@@ -10,7 +10,7 @@ local M = {}
 
 function M.main()
   M.add_loader()
-  M.add_network_tank()
+  -- M.add_network_tank()
 
   data:extend(Hotkeys.hotkeys)
 

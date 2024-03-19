@@ -1669,6 +1669,13 @@ Event.on_configuration_changed(function ()
   M.reread_settings()
 end)
 
+Event.register(
+  defines.events.on_runtime_mod_setting_changed,
+  function(event)
+    clog("item-network: *** SETTINGS CHANGED *** %s", serpent.line(event))
+    M.reread_settings()
+  end)
+
 -- need to run as soon as 'game' is available
 Event.on_nth_tick(1, M.setup)
 Event.on_init(M.setup)

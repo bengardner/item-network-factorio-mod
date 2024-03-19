@@ -1,5 +1,6 @@
 --[[
 Automatically adds a 1-stack request for any researched items.
+Anything that can't be placed has a minimum value of 0.
 ]]
 local Event = require('__stdlib__/stdlib/event/event')
 local item_utils = require("src.item_utils")
@@ -11,16 +12,28 @@ local function sort_character_requests(player, character, items, valid_items)
   for idx=1, character.request_slot_count do
     local ls = character.get_personal_logistic_slot(idx)
     if ls ~= nil and ls.name ~= nil then
-      local da_max = ls.max
-      if da_max > 1000000 then
-        local iprot = game.item_prototypes[ls.name]
-        if iprot ~= nil then
+      local iprot = game.item_prototypes[ls.name]
+      if iprot ~= nil then
+        local da_max = ls.max
+        local da_min = ls.min
+        if da_max > 1000000 then
           da_max = iprot.stack_size
         end
-      end
-      if valid_items[ls.name] ~= nil then
-        table.insert(requests, { slot=idx, item=ls.name, min=ls.min, max=da_max })
-        hit[ls.name] = true
+        if da_min > 0 then
+          if iprot.place_result == nil and
+             iprot.place_as_equipment_result == nil and
+             iprot.place_as_tile_result == nil and
+             iprot.module_effects == nil
+          then
+            print(string.format("[%s] set min=0", ls.name))
+            da_min = 0
+          end
+        end
+
+        if valid_items[ls.name] ~= nil then
+          table.insert(requests, { slot=idx, item=ls.name, min=da_min, max=da_max })
+          hit[ls.name] = true
+        end
       end
     end
   end

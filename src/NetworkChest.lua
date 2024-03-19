@@ -151,13 +151,21 @@ end
 
 function M.on_marked_for_deconstruction(event)
   local ent = event.entity
-  -- put any fluids or items in the network
-  GlobalState.put_contents_in_network(ent)
+  if ent.name == "deconstructible-tile-proxy" then
+    --print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
+    GlobalState.mine_queue(ent)
+    return
+  end
+
+  if ent.unit_number ~= nil then
+    -- put any fluids or items in the network
+    GlobalState.put_contents_in_network(ent)
+  end
+
   --print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
   if ent.prototype.mineable_properties ~= nil and ent.prototype.mineable_properties.minable == true then
     -- print(string.format("destroy: TODO [%s] %s @ %s", ent.unit_number, ent.name, serpent.line(ent.position)))
     --TODO: queue for destruction in 10 seconds
-    --
     GlobalState.mine_queue(ent)
   end
 end

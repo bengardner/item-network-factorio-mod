@@ -659,11 +659,13 @@ local function update_player_selected(player)
         number = info.config.buffer or 1000,
       }
     end
+    --[[
     desc_flow.add {
       type="label",
       caption = string.format("%s", serpent.block(info.config)),
       ignored_by_interaction = true,
     }
+    ]]
     if info.fluid_addave ~= nil then
       desc_flow.add {
         type="label",
@@ -678,7 +680,7 @@ local function update_player_selected(player)
         caption = string.format("auto %s", serpent.line(acfg)),
         ignored_by_interaction = true,
       }
-      print(serpent.line(acfg))
+      --print(serpent.line(acfg))
     end
   end
   if ent.name == "entity-ghost" then

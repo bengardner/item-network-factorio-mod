@@ -35,7 +35,7 @@ local function sort_character_requests(player, character, items, valid_items)
       end
     end
   end
-  print(serpent.block(requests))
+  --print(serpent.block(requests))
 
   table.sort(requests, item_utils.entry_compare_items)
   requests = item_utils.entry_list_split_by_group(requests)
@@ -148,7 +148,8 @@ local function force_request_everything(force)
       if prot ~= nil then
         items_tab[name] = true
         table.insert(items, { item = name, count = prot.stack_size })
-        print(string.format(" -- Added %s due to %s [%s] %s", name, recipe.name, what, serpent.line(prot.localised_name)))
+        -- print(string.format(" -- Added %s due to %s [%s] %s", name, recipe.name, what, serpent.line(prot.localised_name)))
+        --[[
         local pr = prot.place_result
         if pr ~= nil then
           local nup_name
@@ -156,8 +157,9 @@ local function force_request_everything(force)
           if nup ~= nil then
             nup_name = nup.name
           end
-          print(string.format("   => place %s next_upgrade %s", pr.name, serpent.line(nup_name)))
+          --print(string.format("   => place %s next_upgrade %s", pr.name, serpent.line(nup_name)))
         end
+        ]]
       end
     end
   end

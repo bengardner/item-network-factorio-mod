@@ -1181,39 +1181,92 @@ function M.log_entity(title, entity)
   end
 end
 
--- queue the entity for destruction in 10 seconds
-function M.mine_queue(ent)
-  table.insert(global.mod.mine_queue, { ent, game.tick + 3*60 })
-  -- print(string.format("queue mine %s @ %s", ent.name, serpent.line(ent.position)))
+local function get_mine_key()
+  local seqno = (global.mod.mine_seqno or 0) + 1
+  if seqno > 2000000000 then
+    seqno = 0
+  end
+  global.mod.mine_seqno = seqno
+  return -seqno
 end
 
+-- queue the entity for destruction in 10 seconds
+function M.mine_queue(ent)
+  local key = ent.unit_number
+  if key == nil then
+    key = get_mine_key()
+  end
+  global.mod.mine_queue[key] = { ent, game.tick + 3*60 }
+end
+
+function M.cliff_queue(ent)
+  local qq = global.mod.cliff_queue
+  if qq == nil then
+    qq = {}
+    global.mod.cliff_queue = qq
+  end
+  qq[get_mine_key()] = { ent, game.tick + 3*60 }
+end
+
+--[[
+global.mod.mine_queue contains items that are waiting to be mined.
+This steps through them and mines up to 1000 of them in one go.
+]]
 function M.mine_process()
+  local qq = global.mod.mine_queue
   local now = game.tick
-  local mine_later = {}
-  local mine_now = {}
-  for _, ee in ipairs(global.mod.mine_queue) do
-    local ent = ee[1]
+  local inv
+  local left = 1000
+
+  for key, val in pairs(qq) do
+    local ent = val[1]
     if ent.valid and ent.to_be_deconstructed() then
-      if now >= ee[2] then
-        table.insert(mine_now, ee)
-      else
-        table.insert(mine_later, ee)
+      if now >= val[2] then
+        if inv == nil then
+          inv = game.create_inventory(100)
+        end
+        if ent.mine({ inventory=inv }) then
+          qq[key] = nil
+          M.items_inv_to_net(inv)
+          left = left - 1
+          if left <= 0 then
+            break
+          end
+        end
       end
+    else
+      qq[key] = nil
     end
   end
-  global.mod.mine_queue = mine_later
-
-  if #mine_now > 0 then
-    local inv = game.create_inventory(math.min(100, 4 * #mine_now))
-    for _, eee in ipairs(mine_now) do
-      local ent = eee[1]
-      -- print(string.format("delayed mine %s @ %s", ent.name, serpent.line(ent.position)))
-      ent.mine({ inventory=inv })
-    end
-    for name, count in pairs(inv.get_contents()) do
-      M.increment_item_count(name, count)
-    end
+  if inv ~= nil then
     inv.destroy()
+  end
+
+  -- now try killing cliffs, one per cycle
+  qq = global.mod.cliff_queue
+  if qq ~= nil then
+    for key, val in pairs(qq) do
+      local ent = val[1]
+      if ent.valid and ent.to_be_deconstructed() then
+        if now >= val[2] then
+          local exp_name = ent.prototype.cliff_explosive_prototype
+          if M.get_item_count(exp_name) > 0 then
+            if ent.surface.create_entity({
+                name=exp_name,
+                position=ent.position,
+                force=ent.force,
+                target=ent.position,
+                speed=1}) ~= nil
+            then
+              M.increment_item_count(exp_name, -1)
+              break
+            end
+          else
+            val[2] = now + 120
+          end
+        end
+      end
+    end
   end
 end
 Event.on_nth_tick(60, M.mine_process)

@@ -151,8 +151,8 @@ end
 
 function M.on_marked_for_deconstruction(event)
   local ent = event.entity
-  if ent.name == "deconstructible-tile-proxy" then
-    --print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
+  if ent.name == "deconstructible-tile-proxy" or ent.name == "item-on-ground" then
+    -- print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
     GlobalState.mine_queue(ent)
     return
   end
@@ -167,6 +167,20 @@ function M.on_marked_for_deconstruction(event)
     -- print(string.format("destroy: TODO [%s] %s @ %s", ent.unit_number, ent.name, serpent.line(ent.position)))
     --TODO: queue for destruction in 10 seconds
     GlobalState.mine_queue(ent)
+
+  elseif ent.type == "cliff" then
+    --[[
+    print(string.format("destroy: TODO %s [%s] @ %s exp=%s", ent.name, ent.type, serpent.line(ent.position),
+      ent.prototype.cliff_explosive_prototype))
+    ent.surface.create_entity({
+      name=ent.prototype.cliff_explosive_prototype,
+      position=ent.position,
+      force=ent.force,
+      target=ent.position,
+      speed=1,
+    })
+    ]]
+    GlobalState.cliff_queue(ent)
   end
 end
 

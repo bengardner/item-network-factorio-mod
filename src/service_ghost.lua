@@ -43,6 +43,12 @@ local function populate_ghost(entity, is_entity)
     for _, eee in ipairs(ents) do
       if eee.prototype.mineable_properties.minable then
         table.insert(to_mine, eee)
+      else
+        if eee.type == 'cliff' then
+          GlobalState.cliff_queue(eee)
+        else
+          GlobalState.mine_queue(eee)
+        end
       end
     end
 

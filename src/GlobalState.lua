@@ -1259,12 +1259,17 @@ function M.mine_process()
                 speed=1}) ~= nil
             then
               M.increment_item_count(exp_name, -1)
+              -- don't assume it is gone
+              -- qq[key] = nil
               break
             end
           else
             val[2] = now + 120
           end
         end
+      else
+        -- no longer scheduled for deletion or already gone
+        qq[key] = nil
       end
     end
   end

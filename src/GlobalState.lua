@@ -187,7 +187,7 @@ function M.inner_setup()
 end
 
 function M.reread_settings()
-  global.infinite_supply = settings.global["item-network-infinite-duplicate"].value
+  global.infinite_supply = settings.global["item-network-cheat-infinite-duplicate"].value
   print(string.format("item-network: READYING SETTINGS: %s", global.infinite_supply))
 end
 
@@ -1049,7 +1049,7 @@ function M.assembler_check_recipe(entity)
 end
 
 --[[
-This processes up to "item-network-number-of-entities-per-tick" entities from the active queue.
+This processes up to "item-network-config-entities-per-tick" entities from the active queue.
 If the current queue is empty and the deadline has passed then we step to the next queue, which
 is processed on the next tick.
 
@@ -1057,7 +1057,7 @@ The function is passed in to avoid circular dependencies.
 ]]
 function M.queue_service()
   local MAX_ENTITIES_TO_UPDATE = settings.global
-    ["item-network-number-of-entities-per-tick"]
+    ["item-network-config-entities-per-tick"]
     .value
 
   local qs = global.mod.scan_queues
@@ -1279,14 +1279,14 @@ Event.on_nth_tick(60, M.mine_process)
 --[[
 Automatically configure a chest to request ingredients needed for linked assemblers.
         local buffer_size = settings.global
-          ["item-network-stack-size-on-assembler-paste"].value
+          ["item-network-chest-size-on-paste"].value
 
 ]]
 function M.auto_network_chest(entity)
   local requests = {}
   local provides = {}
 
-  --local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
+  --local buffer_size = settings.global["item-network-chest-size-on-paste"].value
 
   M.log_entity("*** auto-scan", entity)
 

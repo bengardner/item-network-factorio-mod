@@ -584,7 +584,7 @@ local function paste_network_chest(dst_info, source)
     if recipe ~= nil then
       local requests = {}
       local buffer_size = settings.global
-        ["item-network-stack-size-on-assembler-paste"].value
+        ["item-network-chest-size-on-paste"].value
       for _, ingredient in ipairs(recipe.ingredients) do
         if ingredient.type == "item" then
           local stack_size = game.item_prototypes[ingredient.name].stack_size
@@ -606,7 +606,7 @@ local function paste_network_chest(dst_info, source)
     if inv.is_filtered() then
       -- clog("SOURCE: %s t=%s inv slots=%s filt=%s", source.name, source.type, #inv, inv.is_filtered())
       local requests = {}
-      local buffer_size = settings.global["item-network-stack-size-on-assembler-paste"].value
+      local buffer_size = settings.global["item-network-chest-size-on-paste"].value
       for idx=1,#inv do
         local ff = inv.get_filter(idx)
         if ff ~= nil then
@@ -963,7 +963,7 @@ end
 -- handles logistic storage chests
 local function service_logistic_chest_storage(info)
   -- clog("[%s] storage [%s] %s", game.tick, info.entity.unit_number, info.entity.name)
-  if not settings.global["item-network-enable-logistic-chest"].value then
+  if not settings.global["item-network-service-logistic-chest"].value then
     return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
 
@@ -1000,18 +1000,15 @@ end
 
 -- handles logistic buffer and requester chests
 local function service_logistic_chest_requester(info)
-  if not settings.global["item-network-enable-logistic-chest"].value then
-    return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+  if settings.global["item-network-service-logistic-chest"].value then
+    local entity = info.entity
+    inventory_handle_requests(entity, entity.get_output_inventory())
   end
-
-  local entity = info.entity
-  inventory_handle_requests(entity, entity.get_output_inventory())
-
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
 local function service_logistic_chest_active_provider(info)
-  if settings.global["item-network-enable-logistic-chest"].value then
+  if settings.global["item-network-service-logistic-chest"].value then
     return update_network_chest_provider(info)
     --GlobalState.items_inv_to_net(info.entity.get_output_inventory())
   end
@@ -1019,7 +1016,7 @@ local function service_logistic_chest_active_provider(info)
 end
 
 local function service_logistic_chest_passive_provider(info)
-  if settings.global["item-network-enable-logistic-chest"].value then
+  if settings.global["item-network-service-logistic-chest"].value then
     GlobalState.items_inv_to_net_with_limits(info.entity.get_output_inventory())
   end
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX

@@ -4,7 +4,7 @@ local clog = require("src.log_console").log
 
 
 local function update_player(player, enable_logistics)
-  local enable_player = settings.get_player_settings(player.index)["item-network-enable-player-logistics"].value
+  local enable_player = settings.get_player_settings(player.index)["item-network-player-enable-logistics"].value
 
   local entity = player.character
   if entity == nil then
@@ -59,7 +59,7 @@ local function update_player(player, enable_logistics)
 end
 
 local function service_players()
-  local enable_logistics = settings.global["item-network-force-enable-logistics"].value
+  local enable_logistics = settings.global["item-network-player-force-logistics"].value
 
   for _, player in pairs(game.players) do
     update_player(player, enable_logistics)

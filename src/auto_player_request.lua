@@ -225,7 +225,7 @@ end
 local function on_research_stuff(event)
   local research = event.research
   if research ~= nil and research.force ~= nil then
-    force_request_everything(research.force)
+    --force_request_everything(research.force)
   end
 end
 

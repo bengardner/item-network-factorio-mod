@@ -250,7 +250,7 @@ function M.auto_config(entity, extra_debug)
     local max_temp
     local min_temp
     for temp, _ in pairs(temps) do
-      local f_temp = tonumber(temp)
+      local f_temp = tonumber(temp)/1000
       if f_temp >= filt.minimum_temperature and f_temp <= filt.maximum_temperature then
         if max_temp == nil or f_temp > max_temp then
           max_temp = f_temp

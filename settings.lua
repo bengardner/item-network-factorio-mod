@@ -153,11 +153,19 @@ function M.main()
       order = "102",
     },
     {
+      name = "item-network-cheat-production-duplicate",
+      type = "int-setting",
+      setting_type = "runtime-global",
+      default_value = 0,
+      minimum_value = 0,
+      order = "901",
+    },
+    {
       name = "item-network-cheat-infinite-duplicate",
       type = "bool-setting",
       setting_type = "runtime-global",
       default_value = false,
-      order = "900",
+      order = "902",
     },
   })
 end

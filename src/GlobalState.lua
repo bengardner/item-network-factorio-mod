@@ -1,4 +1,8 @@
-local Queue = require "src.Queue"
+--[[
+This is the do-everything dumping ground for stuff that touches 'global'.
+
+TODO: split this up by functionality.
+]]
 local tables_have_same_keys = require("src.tables_have_same_keys")
   .tables_have_same_keys
 local constants = require "src.constants"
@@ -188,7 +192,8 @@ end
 
 function M.reread_settings()
   global.infinite_supply = settings.global["item-network-cheat-infinite-duplicate"].value
-  print(string.format("item-network: READYING SETTINGS: %s", global.infinite_supply))
+  global.production_supply = settings.global["item-network-cheat-production-duplicate"].value
+  print(string.format("item-network: SETTINGS: inf=%s prod=%s", global.infinite_supply, global.production_supply))
 end
 
 --[[
@@ -389,10 +394,12 @@ end
 -- result: "steam@165@500", "steam@165", "steam@"
 function M.fluid_temp_key_encode(fluid_name, temp, temp2)
   if temp ~= nil then
+    temp = M.normalize_temp(fluid_name, temp)
     if temp2 ~= nil then
-      return string.format("%s@%d@%d", fluid_name, math.floor(temp * 1000), math.floor(temp2 * 1000))
+      temp2 = M.normalize_temp(fluid_name, temp2)
+      return string.format("%s@%s@%s", fluid_name, temp, temp2)
     end
-    return string.format("%s@%d", fluid_name, math.floor(temp * 1000))
+    return string.format("%s@%s", fluid_name, temp)
   end
   return fluid_name .. "@"
 end
@@ -686,14 +693,20 @@ end
 
 -------------------------------------------------------------------------------
 
-function M.get_item_count(item_name)
-  return global.mod.items[item_name] or 0
-end
-
 -- turn the temperature into a string to avoid floating point errors in the key
-local function normalize_temp(temp)
-  if type(temp) ~= "string" then
-    return string.format("%.2f", temp)
+function M.normalize_temp(fluid_name, temp)
+  if temp == nil then
+    temp = game.fluid_prototypes[fluid_name].default_temperature
+  end
+  -- convert from the old format
+  if type(temp) == "string" then
+    if string.find(temp, '%.') ~= nil then
+      print(string.format(" found . in %s", temp))
+      temp = tonumber(temp)
+    end
+  end
+  if type(temp) == "number" then
+    return string.format("%d", temp * 1000)
   end
   return temp
 end
@@ -722,10 +735,7 @@ function M.get_fluid_count(fluid_name, temp)
   if fluid_temps == nil then
     return 0
   end
-  if temp == nil then
-    temp = game.fluid_prototypes[fluid_name].default_temperature
-  end
-  temp = normalize_temp(temp)
+  temp = M.normalize_temp(fluid_name, temp)
   return fluid_temps[temp] or 0, tonumber(temp)
 end
 
@@ -738,7 +748,7 @@ function M.get_fluid_count_range(fluid_name, temp_exact, temp_min, temp_max)
 
   for stemp, count in pairs(fluid_temps) do
     if count > 1 then
-      local temp = tonumber(stemp)
+      local temp = tonumber(stemp) / 1000
       if M.fluid_temp_matches(temp, temp_exact, temp_min, temp_max) then
         return count, temp
       end
@@ -756,8 +766,9 @@ function M.normalize_fluids()
   for fluid_name, fluid_temps in pairs(global.mod.fluids) do
     local fixes = {}
     for temp, count in pairs(fluid_temps) do
-      if type(temp) ~= "string" then
-        local stemp = normalize_temp(temp)
+      local stemp = M.normalize_temp(fluid_name, temp)
+      if temp ~= stemp then
+        print(string.format("normalize: %s %s => %s", fluid_name, temp, stemp))
         table.insert(fixes, { temp, stemp, count })
       end
     end
@@ -790,10 +801,7 @@ function M.set_item_count(item_name, count)
 end
 
 function M.set_fluid_count(fluid_name, temp, count)
-  if temp == nil then
-    temp = game.fluid_prototypes[fluid_name].default_temperature
-  end
-  temp = normalize_temp(temp)
+  temp = M.normalize_temp(fluid_name, temp)
   local ff = global.mod.fluids[fluid_name]
   if ff == nil then
     ff = {}
@@ -808,7 +816,8 @@ function M.set_fluid_count(fluid_name, temp, count)
       ff[temp] = count
     end
   elseif count <= 0 then
-    ff[temp] = nil
+    -- REVISIT: don't clear out the temp entry!
+    ff[temp] = 0
   else
     ff[temp] = count
   end
@@ -822,9 +831,122 @@ function M.increment_fluid_count(fluid_name, temp, delta)
   M.set_fluid_count(fluid_name, temp, count + delta)
 end
 
+-------------------------------------------------------------------------------
+
+-- grab the force-specific table
+-- the force_name is assumed to be valid (usually "player")
+function M.force_get(force_name)
+  local fd = global.forces[force_name]
+  if fd == nil then
+    -- set some defaults
+    fd = {
+      items = {},
+      item_limits = {},
+      fluids = {},
+      fluid_limits = {},
+    }
+    global.forces[force_name] = fd
+  end
+  return fd
+end
+
+-- grab a force-specific field, default {}
+function M.force_get_field(force_name, field)
+  local fd = M.force_get(force_name)
+  local xx = fd[field]
+  if xx == nil then
+    xx = {}
+    fd[field] = xx
+  end
+  return xx
+end
+
+-- old, non-force aware function
+function M.get_item_count(item_name)
+  return global.mod.items[item_name] or 0
+end
+
+-- old, non-force aware function
 function M.increment_item_count(item_name, delta)
   local count = M.get_item_count(item_name)
   M.set_item_count(item_name, count + delta)
+end
+
+-------------------------------------------------------------------------------
+
+function M.items_get(force_name)
+  return M.force_get_field(force_name, 'items')
+end
+
+function M.items_get_count(force_name, item_name)
+  return M.force_get_field(force_name, 'items')[item_name] or 0
+end
+
+function M.items_set_count(force_name, item_name, count)
+  M.force_get_field(force_name, 'items')[item_name] = count
+end
+
+function M.items_increment_count(force_name, item_name, delta)
+  local count = M.items_get_count(force_name, item_name)
+  M.items_set_count(force_name, item_name, count + delta)
+end
+
+function M.items_get_limit(force_name, item_name)
+  return M.force_get_field(force_name, 'item_limits')[item_name] or 0
+end
+
+function M.items_set_limit(force_name, item_name, count)
+  M.force_get_field(force_name, 'item_limits')[item_name] = count
+end
+
+-------------------------------------------------------------------------------
+-- fluid structure:
+-- { [ fluid_name ] = { [temperature*1000] = count } }
+function M.fluids_get(force_name)
+  return M.force_get_field(force_name, 'fluids')
+end
+
+function M.fluids_get_count(force_name, fluid_name, temp)
+  local fluid_temps = M.fluids_get(force_name)[fluid_name]
+  if fluid_temps == nil then
+    return 0
+  end
+
+  temp = M.normalize_temp(fluid_name, temp)
+  return fluid_temps[temp] or 0, tonumber(temp)
+end
+
+function M.fluids_set_count(force_name, fluid_name, temp, count)
+  local fluid_temps = M.fluids_get(force_name)[fluid_name]
+  temp = M.normalize_temp(fluid_name, temp)
+
+  if global.infinite_supply then
+    local old_count = fluid_temps[temp] or 0
+    if count > old_count then
+      if count < constants.MAX_TANK_SIZE then
+        count = constants.MAX_TANK_SIZE
+      end
+      fluid_temps[temp] = count
+    end
+  elseif count <= 0 then
+    fluid_temps[temp] = nil
+  else
+    fluid_temps[temp] = count
+  end
+end
+
+function M.fluids_increment_count(force_name, fluid_name, temp, delta)
+  local count = M.fluids_get_count(force_name, fluid_name, temp)
+  M.fluids_set_count(force_name, fluid_name, temp, count + delta)
+end
+
+function M.fluids_get_limit(force_name, fluid_name, temp)
+  local key = 'asd'
+  return M.force_get_field(force_name, 'fluid_limits')[item_name] or 0
+end
+
+function M.fluids_set_limit(force_name, fluid_name, temp, count)
+  M.force_get_field(force_name, 'fluid_limits')[item_name] = count
 end
 
 --[[
@@ -1056,6 +1178,8 @@ is processed on the next tick.
 The function is passed in to avoid circular dependencies.
 ]]
 function M.queue_service()
+  M.setup()
+
   local MAX_ENTITIES_TO_UPDATE = settings.global
     ["item-network-config-entities-per-tick"]
     .value
@@ -1624,32 +1748,22 @@ function M.scan_prototypes()
 
   -- key=type, val=service_type
   local type_to_service = {
-    ["spider-vehicle"]     = "spidertron",
-    ["car"]                = "general-service", -- "car",
-    ["furnace"]            = "furnace", -- "furnace",
     ["ammo-turret"]        = "general-service", -- "ammo-turret",
     ["artillery-turret"]   = "general-service", -- "artillery-turret",
-    ["lab"]                = "lab", -- "car",
+    ["assembling-machine"] = "assembling-machine",
+    ["car"]                = "car",
     ["entity-ghost"]       = "entity-ghost",
+    ["furnace"]            = "furnace",
+    ["lab"]                = "lab",
     ["rocket-silo"]        = "rocket-silo",
+    ["spider-vehicle"]     = "spidertron",
   }
-
-  if true or settings.global["item-network-service-assemblers"].value then
-    -- clog("Adding 'assembling-machine' to the list")
-    type_to_service["assembling-machine"] = "assembling-machine"
-  end
 
   for _, prot in pairs(game.entity_prototypes) do
     if prot.has_flag("hidden") or not prot.has_flag("player-creation") then
-      -- not ading it
+      -- not adding it
     elseif prot.type == "logistic-container" then
-      --if prot.logistic_mode == "requester" or prot.logistic_mode == "buffer" or prot.logistic_mode == "storage" then
       name_to_service[prot.name] = "logistic-chest-" .. prot.logistic_mode
-      --elseif prot.logistic_mode == "active-provider" then
-      --  name_to_service[prot.name] = "logistic-chest-provider"
-      --else
-      --  clog("logistic_mode: %s %s", prot.logistic_mode, prot.name)
-      --end
     else
       local ss = type_to_service[prot.type]
       if ss ~= nil then
@@ -1692,7 +1806,10 @@ end
 
 --[[
 Determine the recipe name based on ore based on the inputs, last_recipe or info.ore_name
+
+FIXME: no longer used -- see service_furnace.lua
 ]]
+--[[
 function M.furnace_get_ore_recipe(ore_name)
   local o2fr = global.ore_to_furnce_recipe
   if o2fr == nil then
@@ -1715,6 +1832,7 @@ function M.furnace_get_ore_recipe(ore_name)
     return game.recipe_prototypes[recipe_name]
   end
 end
+]]
 
 -------------------------------------------------------------------------------
 
@@ -1734,8 +1852,8 @@ Event.register(
     M.reread_settings()
   end)
 
--- need to run as soon as 'game' is available
-Event.on_nth_tick(1, M.setup)
+-- need to run setup() as soon as 'game' is available
 Event.on_init(M.setup)
+Event.on_nth_tick(1, function() M.queue_service() end)
 
 return M

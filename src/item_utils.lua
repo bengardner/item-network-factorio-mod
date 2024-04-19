@@ -47,7 +47,7 @@ function M.item_need_group_break(p1, p2, break_fluids)
   return (p1_i.group.name ~= p2_i.group.name) or (p1_i.subgroup.name ~= p2_i.subgroup.name)
 end
 
--- compare two fluidss by order then temperature
+-- compare two fluids by order then temperature
 function M.entry_compare_fluids(left, right)
   local left_order = game.fluid_prototypes[left.item].order
   local right_order = game.fluid_prototypes[right.item].order

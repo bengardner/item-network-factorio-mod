@@ -1,3 +1,6 @@
+--[[
+Entity handling and even code.
+]]
 local GlobalState = require "src.GlobalState"
 local NetworkChestGui = require "src.NetworkChestGui"
 local UiHandlers = require "src.UiHandlers"
@@ -9,10 +12,6 @@ local constants = require("src.constants")
 local clog = require("src.log_console").log
 
 local M = {}
-
---function M.on_init()
-  --GlobalState.setup()
---end
 
 
 local function generic_create_handler(event)
@@ -152,7 +151,6 @@ end
 function M.on_marked_for_deconstruction(event)
   local ent = event.entity
   if ent.name == "deconstructible-tile-proxy" or ent.name == "item-on-ground" then
-    -- print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
     GlobalState.mine_queue(ent)
     return
   end
@@ -162,24 +160,10 @@ function M.on_marked_for_deconstruction(event)
     GlobalState.put_contents_in_network(ent)
   end
 
-  --print(string.format("destroy: %s @ %s MP=%s", ent.name, serpent.line(ent.position), serpent.line(ent.prototype.mineable_properties)))
   if ent.prototype.mineable_properties ~= nil and ent.prototype.mineable_properties.minable == true then
-    -- print(string.format("destroy: TODO [%s] %s @ %s", ent.unit_number, ent.name, serpent.line(ent.position)))
-    --TODO: queue for destruction in 10 seconds
     GlobalState.mine_queue(ent)
 
   elseif ent.type == "cliff" then
-    --[[
-    print(string.format("destroy: TODO %s [%s] @ %s exp=%s", ent.name, ent.type, serpent.line(ent.position),
-      ent.prototype.cliff_explosive_prototype))
-    ent.surface.create_entity({
-      name=ent.prototype.cliff_explosive_prototype,
-      position=ent.position,
-      force=ent.force,
-      target=ent.position,
-      speed=1,
-    })
-    ]]
     GlobalState.cliff_queue(ent)
   end
 end
@@ -189,11 +173,13 @@ function M.on_post_entity_died(event)
     local info = GlobalState.entity_info_get(event.unit_number)
     if info ~= nil then
       if event.ghost ~= nil then
+        -- FIXME: look up service 'tags' and copy that
+        -- FIXME: use a consistent 'config' member for all preserved config
         if info.requests ~= nil then
           -- network-chest
           event.ghost.tags = { requests = info.requests }
         elseif info.config ~= nil then
-          -- network-tank
+          -- network-tank or furnace
           event.ghost.tags = { config = info.config }
         end
       end
@@ -254,6 +240,7 @@ function M.on_player_setup_blueprint(event)
         local svc_func = GlobalState.get_service_task(info.service_type)
         if svc_func ~= nil and svc_func.tag ~= nil then
           if type(svc_func.refresh_tags) == "function" then
+            -- REVISIT: what is the purpose of this function? Preserve tags? Paste tags?
             svc_func.refresh_tags(info)
           end
           blueprint.set_blueprint_entity_tag(
@@ -305,52 +292,6 @@ function M.on_entity_settings_pasted(event)
     return
   end
 end
-
-
---[[
-This is the handler for the "new" requester-only chest.
-Fills the chest with one item (filter slot 1), respecting the bar.
-
-NOT USED RIGHT NOW
-]]
-local function update_network_chest_requester(info)
-  local status = GlobalState.UPDATE_STATUS.NOT_UPDATED
-  local inv = info.entity.get_output_inventory()
-  local contents = inv.get_contents()
-
-  -- satisfy requests (pull into contents)
-  for _, req in pairs(info.requests) do
-    if req.type == "take" then
-      local n_have = contents[req.item] or 0
-      local n_innet = GlobalState.get_item_count(req.item)
-      local n_avail = math.max(0, n_innet - (req.limit or 0))
-      local n_want = req.buffer
-      if n_want > n_have then
-        local n_transfer = math.min(n_want - n_have, n_avail)
-        if n_transfer > 0 then
-          -- it may not fit in the chest due to other reasons
-          n_transfer = inv.insert({name=req.item, count=n_transfer})
-          if n_transfer > 0 then
-            status = GlobalState.UPDATE_STATUS.UPDATE_PRI_SAME
-            GlobalState.set_item_count(req.item, n_innet - n_transfer)
-
-            --[[ If we filled the entire buffer AND there is enough in the net for another buffer, then
-            we are probably not requesting enough. Up the buffer size by 2.
-            ]]
-            if n_transfer == req.buffer and n_innet > n_transfer * 4 then
-              req.buffer = req.buffer + 2
-            end
-          end
-        else
-          GlobalState.missing_item_set(req.item, info.entity.unit_number, n_want - n_have)
-        end
-      end
-    end
-  end
-
-  return status
-end
-
 
 -------------------------------------------
 -- GUI Section -- needs to move into GUI files
@@ -544,15 +485,5 @@ Event.on_event(
   "in_cancel_dialog",
   M.in_cancel_dialog
 )
---[[
-local function on_player_fast_transferred(event)
-  clog("on_player_fast_transferred: %s from+player=%s is_split=%s", event.entity.name, event.from_player, event.is_split)
-end
-
-Event.on_event(
-  defines.events.on_player_fast_transferred,
-  on_player_fast_transferred
-)
-]]
 
 return M

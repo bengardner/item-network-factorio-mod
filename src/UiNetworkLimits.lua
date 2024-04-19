@@ -218,6 +218,7 @@ local function get_limit_items()
   end
   for name, temp_info in pairs(GlobalState.get_fluids()) do
     for temp, _ in pairs(temp_info) do
+      temp = tonumber(temp) / 1000
       local key = GlobalState.fluid_temp_key_encode(name, temp)
       if limits[key] == nil then
         limits[key] = GlobalState.get_default_limit(key)

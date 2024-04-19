@@ -29,7 +29,7 @@ function M.get_parameters()
       local max_temp
       local max_count
       for temp, count in pairs(fluid_temps) do
-        local f_temp = tonumber(temp)
+        local f_temp = tonumber(temp)/1000
         if max_temp == nil or max_temp < f_temp then
           max_temp = f_temp
           max_count = count

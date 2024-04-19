@@ -413,6 +413,14 @@ local function request_everything(player)
   end
 end
 
+local function dump_resources()
+  for k, v in pairs(game.entity_prototypes) do
+    if v.type == 'resource' then
+      print(string.format("%s type=%s grp=%s sg=%s", v.name, v.type, v.group.name, v.subgroup.name))
+    end
+  end
+end
+
 Event.on_event("debug-network-item", function (event)
     --GlobalState.log_queue_info()
     -- log_ammo_stuff()
@@ -434,6 +442,8 @@ Event.on_event("debug-network-item", function (event)
       --end
       --request_everything(player)
       auto_player_request.doit(player)
+
+      --dump_resources()
     end
   end)
 
@@ -592,7 +602,8 @@ local function update_player_selected(player)
       ignored_by_interaction = true,
     }
   end
-  if info.ore_name ~= nil then
+  local ore_name = (info.config or {}).ore_name
+  if ore_name ~= nil then
     --[[
     local hflow = desc_flow.add {
       type="flow",
@@ -604,7 +615,7 @@ local function update_player_selected(player)
       ignored_by_interaction = true,
     }
     ]]
-    local spname = get_sprite_name(info.ore_name)
+    local spname = get_sprite_name(ore_name)
     if spname ~= nil then
       desc_flow.add {
         type = "sprite-button",
@@ -830,8 +841,6 @@ end
 -- Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
 Event.on_event(defines.events.on_gui_closed, my_on_gui_closed)
 
-
-
 local function my_on_gui_opened(event)
   if global.test_gui ~= nil then
     global.test_gui.destroy()
@@ -852,14 +861,35 @@ local function my_on_gui_opened(event)
     global.test_gui = player.gui.relative.add({
       --type = "sprite-button",
       type = "frame",
-      name = "test-button",
+      name = "itemnet-frame",
       --sprite = "item/locomotive",
       anchor = {
-        gui      = defines.relative_gui_type.container_gui,
+        gui      = defines.relative_gui_type.furnace_gui,
         --gui      = defines.relative_gui_type.additional_entity_info_gui,
         position = defines.relative_gui_position.right,
       },
     })
+    global.test_gui.add({
+      type = "label",
+      caption = "Pick The Recipe",
+    })
+    global.test_gui.add({
+      type = "sprite-button",
+      sprite = "item/locomotive",
+    })
+    local ef = {
+      { filter="has-product-item" },
+      { mode = "and", filter = "category", category = "smelting" },
+    }
+    global.test_gui.add({
+      type = "choose-elem-button",
+      elem_type = "recipe",
+      recipe = "sand",
+      elem_filters = ef,
+    })
+    for k, v in pairs(game.recipe_prototypes) do
+      print(string.format("%s : cat=%s", k, v.category))
+    end
   end
 end
 Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)

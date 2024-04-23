@@ -7,7 +7,7 @@
 local constants = require "src.constants"
 local M = {}
 
--- this belonds in a utility file
+-- this belongs in a utility file
 local function str_endswith(text, tag)
   if type(text) == "string" and type(tag) == "string" then
     return #tag <= #text and string.sub(text, 1 + #text - #tag) == tag

@@ -8,9 +8,10 @@ local M = {}
 function M.log(...)
   local text = string.format(...)
   print(text)
-  if game ~= nil then
-    game.print(text)
-  end
+  -- NOTE: printing to the console in a conditional manner causes desync
+  --if game ~= nil then
+  --  game.print(text)
+  --end
 end
 
 return M

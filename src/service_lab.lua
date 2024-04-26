@@ -9,16 +9,17 @@ local Event = require('__stdlib__/stdlib/event/event')
 local M = {}
 
 -- list of recipes that creates the science pack
-M.item_recipes = {}
+-- key=item_name, val={ recipe_name, ... }
+global.item_recipes = {}
 -- key=force.name, val={ [item_name]=boolean }
-M.force_item_avail = {}
+global.force_item_avail = {}
 
 --[[
 Get the list of recipes that create the specified item.
 This will not change during a run and does not need to be saved.
 ]]
 function M.recipes_for_item(item_name)
-  local rs = M.item_recipes[item_name]
+  local rs = global.item_recipes[item_name]
   if rs == nil then
     rs = game.get_filtered_recipe_prototypes({
       { filter="has-product-item", elem_filters = {{ filter = "name", name = item_name }} }
@@ -28,16 +29,16 @@ function M.recipes_for_item(item_name)
     for k, _ in pairs(rs) do
       rnt[k] = true
     end
-    M.item_recipes[item_name] = rnt
+    global.item_recipes[item_name] = rnt
   end
   return rs
 end
 
 function M.force_item_available(force, item_name)
-  local spb = M.force_item_avail[force.name]
+  local spb = global.force_item_avail[force.name]
   if spb == nil then
     spb = {}
-    M.force_item_avail[force.name] = spb
+    global.force_item_avail[force.name] = spb
   end
   -- see if the result is cached
   local res = spb[item_name]
@@ -101,10 +102,10 @@ While we could see which items are afected by looking at the products, it is
 easier to just reset anything that was determined to NOT be available previously.
 ]]
 local function on_research_finished(event)
-  print_entity_status()
+  -- print_entity_status()
   local force = event.research.force
   if force ~= nil then
-    local spb = M.force_item_avail[force.name]
+    local spb = global.force_item_avail[force.name]
     if spb ~= nil then
       for item_name, val in pairs(spb) do
         if val == false then
@@ -124,9 +125,9 @@ Not tested.
 local function on_research_reversed(event)
   local force = event.research.force
   if force ~= nil then
-    local spb = M.force_item_avail[force.name]
+    local spb = global.force_item_avail[force.name]
     if spb ~= nil then
-      M.force_item_avail[force.name] = {}
+      global.force_item_avail[force.name] = {}
     end
   end
 end

@@ -30,3 +30,5 @@ require "src.auto_player_request"
 require "src.cheat_production_supply"
 
 require "src.remote_interface"
+
+require "src.my_entity_gui"

@@ -26,8 +26,22 @@ local M = {}
 
 -- local recipe cache, as the mapping can't change during a run
 -- and we don't need to save or sync this info.
-M.recipes_input = {} -- { key=furnace_name, val={ key=ore_name, val=recipe } }
-M.recipes_output = {} -- { key=furnace_name, val={ key=item_name, val=recipe } }
+global.recipes_input = {} -- { key=furnace_name, val={ key=ore_name, val=recipe } }
+global.recipes_output = {} -- { key=furnace_name, val={ key=item_name, val=recipe } }
+
+local function item_from_recipe(recipe_name)
+  if recipe_name ~= nil then
+    local recipe = game.recipe_prototypes[recipe_name]
+    if recipe ~= nil then
+      for _, ing in ipairs(recipe.ingredients) do
+        if ing.type == "item" then
+          return ing.name
+        end
+      end
+    end
+  end
+  return nil
+end
 
 --[[
 Sets info.config.ore_name and info.config.recipe_name.
@@ -44,6 +58,8 @@ function M.set_ore_name(info, ore_name)
     local rp = M.furnace_get_recipe(info.entity, ore_name)
     if rp ~= nil then
       recipe_name = rp.name
+      print(string.format("%s[%s] set ore %s recipe %s", info.entity.name, info.unit_number,
+        ore_name, recipe_name))
     end
   end
   cfg.recipe_name = recipe_name
@@ -61,6 +77,31 @@ Gets info.config.recipe_name
 ]]
 function M.get_recipe_name(info)
   return (info.config or {}).recipe_name
+end
+
+function M.set_recipe_name(info, recipe_name)
+  -- TODO: verify that the recipe is valid
+  if info.config.recipe_name ~= recipe_name then
+    info.config.new_recipe_name = recipe_name
+    GlobalState.queue_reservice(info)
+    print(string.format("%s[%s] set recipe %s (was %s)",
+          info.entity.name, info.unit_number,
+          recipe_name, info.config.recipe_name))
+  end
+--[[
+  if recipe_name then
+    local recipe = game.recipe_prototypes[recipe_name]
+    if recipe then
+      for _, ing in ipairs(recipe.ingredients) do
+        if ing.type == "item" then
+          info.config.ore_name = ing.name
+          print(string.format("%s[%s] set recipe %s item %s", info.entity.name, info.unit_number,
+            recipe_name, ing.name))
+        end
+      end
+    end
+  end
+]]
 end
 
 --[[
@@ -109,7 +150,7 @@ Determine the recipe based on the entity and the ore_name.
 returns the recipe prototype.
 ]]
 function M.furnace_get_recipe(entity, ore_name)
-  return get_recipe(entity, ore_name, M.recipes_input, "has-ingredient-item")
+  return get_recipe(entity, ore_name, global.recipes_input, "has-ingredient-item")
 end
 
 --[[
@@ -117,7 +158,7 @@ Guess the recipe based on the output inventory content.
 returns the recipe prototype.
 ]]
 function M.furnace_get_recipe_output(entity, item_name)
-  return get_recipe(entity, item_name, M.recipes_output, "has-product-item")
+  return get_recipe(entity, item_name, global.recipes_output, "has-product-item")
 end
 
 --[[
@@ -263,6 +304,7 @@ Adjust priority
 ]]
 function M.furnace_service(info)
   local entity = info.entity
+  local config = info.config
   local status = entity.status
   local pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_DEC
 
@@ -273,6 +315,17 @@ function M.furnace_service(info)
 
   local o_inv = entity.get_output_inventory()
   local inv_src = entity.get_inventory(defines.inventory.furnace_source)
+
+  -- check for a new_recipe_name
+  if config.new_recipe_name ~= nil then
+    if config.recipe_name ~= config.new_recipe_name then
+      config.recipe_name = config.new_recipe_name
+      config.ore_name = item_from_recipe(config.recipe_name)
+      GlobalState.items_inv_to_net(o_inv)
+      GlobalState.items_inv_to_net(inv_src)
+    end
+    config.new_recipe_name = nil
+  end
 
   -- grab the configured ore and the input ore
   local old_ore = M.get_ore_name(info)
@@ -286,6 +339,8 @@ function M.furnace_service(info)
 
   -- forcibly remove output if the ore changed
   if ore_name ~= old_ore then
+    print(string.format("%s[%s] ore changed from %s to %s", entity.name, entity.unit_number,
+      old_ore, ore_name))
     GlobalState.items_inv_to_net(o_inv)
 
   elseif not o_inv.is_empty() then
@@ -322,6 +377,8 @@ function M.furnace_service(info)
     if status == defines.entity_status.no_ingredients and not is_short then
       pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_INC
     end
+  else
+    pri = GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
   end
   return pri
 end

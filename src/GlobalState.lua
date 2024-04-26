@@ -3,8 +3,8 @@ This is the do-everything dumping ground for stuff that touches 'global'.
 
 TODO: split this up by functionality.
 ]]
-local tables_have_same_keys = require("src.tables_have_same_keys")
-  .tables_have_same_keys
+local thsk = require("src.tables_have_same_keys")
+local EntityService          = require("src.EntityService")
 local constants = require "src.constants"
 local clog = require("src.log_console").log
 local Event = require('__stdlib__/stdlib/event/event')
@@ -17,8 +17,14 @@ local setup_has_run = false
 
 function M.setup()
   if setup_has_run then
+    -- delay the scan for a tick
+    if global.need_to_scan == true then
+      global.need_to_scan = nil
+      M.scan_surfaces()
+    end
     return
   end
+  log("Running GlobalState.setup()")
   setup_has_run = true
   M.reread_settings()
 
@@ -113,8 +119,8 @@ It should set up the global data structure.
 ]]
 function M.inner_setup()
   -- always rebuild the ammo and fuel tables (for now)
-  global.ammo_table = nil
-  global.fuel_table = nil
+  --global.ammo_table = nil
+  --global.fuel_table = nil
 
   -- the 'mod' table holds most interesting data
   if global.mod == nil then
@@ -133,6 +139,9 @@ function M.inner_setup()
 
   -- reset the service queue if the size changes or this is the first call
   if global.mod.scan_queues == nil or (#global.mod.scan_queues ~= constants.QUEUE_COUNT) then
+    if global.mod.scan_queues ~= nil then
+      print("resetting queues due to size change")
+    end
     M.reset_queues()
   end
   -- M.log_queue_info()
@@ -146,7 +155,9 @@ function M.inner_setup()
   if global.mod.fluids == nil then
     global.mod.fluids = {}
   end
-  M.normalize_fluids()
+
+  -- M.normalize_fluids()
+
   if global.mod.missing_item == nil then
     global.mod.missing_item = {} -- missing_item[item][unit_number] = { game.tick, count }
   end
@@ -169,17 +180,24 @@ function M.inner_setup()
   end
 
   -- scan prototypes to see if we need to rescan all surfaces
-  local name_service_map = M.scan_prototypes()
-  if true or not tables_have_same_keys(name_service_map, global.name_service_map) then
-    clog("*** PROTOTYPES CHANGED ***")
+
+  local name_service_map = EntityService.scan_prototypes()
+  if thsk.same_value(name_service_map, global.name_service_map) then
+    log("no prototype changes")
+  else
+    log("Prototype changes; scanning")
     global.name_service_map = name_service_map
-    M.scan_surfaces()
+    global.need_to_scan = true
   end
 
+
   -- major upgrade to unified entity info table, trashes all the separate tables
+  --[[
   if global.mod.chests ~= nil then
     M.convert_to_entity_info()
+    global.mod.chests = nil
   end
+  ]]
 
   if global.mod.alert_trans == nil then
     global.mod.alert_trans = {} -- alert_trans[unit_number] = game.tick
@@ -193,7 +211,13 @@ end
 function M.reread_settings()
   global.infinite_supply = settings.global["item-network-cheat-infinite-duplicate"].value
   global.production_supply = settings.global["item-network-cheat-production-duplicate"].value
-  print(string.format("item-network: SETTINGS: inf=%s prod=%s", global.infinite_supply, global.production_supply))
+  --print(string.format("item-network: SETTINGS: inf=%s prod=%s", global.infinite_supply, global.production_supply))
+end
+
+function M.surface_scan_add(surface_index)
+  if surface_index == nil then
+    global.surfaces_to_scan = { [0] = true }
+  end
 end
 
 --[[
@@ -237,7 +261,8 @@ function M.convert_to_entity_info()
     }
   ]]
 
-  global.name_service_map = M.scan_prototypes()
+  print("convert_to_entity_info")
+  --global.name_service_map = M.scan_prototypes()
 
   -- chests need a 'service_type' field
   for unum, info in pairs(global.mod.chests or {}) do
@@ -271,11 +296,11 @@ function M.convert_to_entity_info()
   end
   global.mod.serviced = nil
 
-  M.scan_surfaces()
+  global.need_to_scan = true
 end
 
 function M.reset_queues()
-  print("item-network: RESET SCAN QUEUE")
+  log("RESET SCAN QUEUE")
   global.mod.scan_deadline = 0 -- keep doing nothing until past this tick
   global.mod.scan_index = 1 -- working on the queue in this index
 
@@ -511,6 +536,17 @@ function M.entity_info_set(unit_number, info)
   global.mod.entity_info[unit_number] = info
 end
 
+function M.entity_info_config_update(unit_number, config)
+  if type(config) == "table" then
+    local info = global.mod.entity_info[unit_number]
+    if info ~= nil then
+      for k, v in pairs(config) do
+        info.config[k] = v
+      end
+    end
+  end
+end
+
 function M.entity_info_clear(unit_number)
   global.mod.entity_info[unit_number] = nil
 end
@@ -528,7 +564,8 @@ function M.entity_info_add(entity, tags)
   if service_type == nil then
     return
   end
--- only if we haven't already added this one
+
+  -- only if we haven't already added this one
   local info = M.entity_info_get(unit_number)
   if info == nil then
     -- grab the service_type. bail if not handled.
@@ -536,11 +573,13 @@ function M.entity_info_add(entity, tags)
     info = {
       service_type = service_type,
       entity = entity,
+      config = {},
+      unit_number = entity.unit_number,
     }
 
     local svc_func = M.get_service_task(service_type)
     if svc_func == nil then
-      clog("genric : nothing for %s", serpent.line(info))
+      clog("generic : nothing for %s", serpent.line(info))
     end
     if svc_func ~= nil and svc_func.tag ~= nil then
       if tags ~= nil then
@@ -1080,10 +1119,10 @@ function M.register_service_task(service_type, funcs)
     funcs.create = M.entity_info_add
   end
   M.service_tasks[service_type] = funcs
-  clog("added service %s", service_type)
-  for k, v in pairs(funcs) do
-    clog('  - %s : %s', k, type(v))
-  end
+  log(("added service %s"):format(service_type))
+  --for k, v in pairs(funcs) do
+  --  clog('  - %s : %s', k, type(v))
+  --end
 end
 
 function M.get_service_task(service_type)
@@ -1731,11 +1770,9 @@ end
 -------------------------------------------------------------------------------
 
 function M.scan_prototypes()
-  clog("item-network: scanning prototypes")
-
    -- key=entity_name, val=service_type
-  local name_to_service = {
-    -- add built-in stuff that we create
+  local fixed_name_to_service = {
+    -- add built-in stuff and stuff that we create
     ["network-chest"]           = "network-chest",
     ["network-chest-provider"]  = "network-chest-provider",
     ["network-chest-requester"] = "network-chest-requester",
@@ -1758,6 +1795,13 @@ function M.scan_prototypes()
     ["rocket-silo"]        = "rocket-silo",
     ["spider-vehicle"]     = "spidertron",
   }
+
+  local name_to_service = {}
+  for name, service in pairs(fixed_name_to_service) do
+    if game.entity_prototypes[name] ~= nil then
+      name_to_service[name] = service
+    end
+  end
 
   for _, prot in pairs(game.entity_prototypes) do
     if prot.has_flag("hidden") or not prot.has_flag("player-creation") then
@@ -1788,20 +1832,34 @@ function M.scan_prototypes()
 end
 
 -- called once at startup if scan_prototypes() returns something different
-function M.scan_surfaces()
-  clog("[%s] item-network: Scanning surfaces", game.tick)
+function M.scan_surfaces(surface_index)
   local name_filter = {}
   for name, _ in pairs(global.name_service_map) do
     table.insert(name_filter, name)
   end
-  for _, surface in pairs(game.surfaces) do
-    local entities = surface.find_entities_filtered { name = name_filter }
-    for _, ent in ipairs(entities) do
-      M.entity_info_add(ent)
+
+  local function scan_surface(surface)
+    if surface ~= nil then
+      log(("Scanning surface [%s] %s"):format(surface.index, surface.name))
+      local entities = surface.find_entities_filtered { name = name_filter }
+      for _, ent in ipairs(entities) do
+        --log((" - ent [%s] @ %s"):format(ent.name, serpent.line(ent.position)))
+        M.entity_info_add(ent)
+      end
     end
   end
-  M.reset_queues()
-  clog("[%s] item-network: Scanning complete", game.tick)
+
+  if surface_index == nil then
+    for _, surface in pairs(game.surfaces) do
+      scan_surface(surface)
+    end
+    --M.reset_queues()
+  else
+    -- scanning a single new surface
+    scan_surface(game.surfaces[surface_index])
+  end
+
+  log("Scanning complete")
 end
 
 --[[
@@ -1838,7 +1896,7 @@ end
 
 -- not sure this belongs here...
 Event.on_configuration_changed(function ()
-  clog("item-network: *** CONFIGURATION CHANGED ***")
+  log("*** CONFIGURATION CHANGED ***")
   -- need to rescan the fuel table
   global.ammo_table = nil
   global.fuel_table = nil
@@ -1848,9 +1906,19 @@ end)
 Event.register(
   defines.events.on_runtime_mod_setting_changed,
   function(event)
-    clog("item-network: *** SETTINGS CHANGED *** %s", serpent.line(event))
+    log(("item-network: *** SETTINGS CHANGED *** %s"): format(serpent.line(event)))
     M.reread_settings()
   end)
+
+local function log_event(event)
+  log(("event: %s"):format(serpent.line(event)))
+  if event.name == defines.events.on_surface_created then
+    global.need_to_scan = true
+  end
+end
+
+Event.register(defines.events.on_surface_imported, log_event)
+Event.register(defines.events.on_surface_created, log_event)
 
 -- need to run setup() as soon as 'game' is available
 Event.on_init(M.setup)

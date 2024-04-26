@@ -32,11 +32,9 @@ local function generic_create_handler(event)
     return
   end
 
-  --clog("generic_create_handler [%s] => %s", entity.name, serpent.line(svc_func))
+  log(("create [%s] [%s] [%s] => %s"):format(entity.name, entity.type, entity.unit_number, service_type))
   if type(svc_func.create) == "function" then
     svc_func.create(entity, event.tags)
-  else
-    --clog("ERROR: no create for %s", entity.name)
   end
 end
 

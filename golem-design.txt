@@ -1,0 +1,76 @@
+Goal - cheat that isn't really a cheat.
+
+Transfer inventory from player.
+  - refill empty coal/fuel (no_fuel) add configurable amount (10)
+  - refill furnaces source when empty (no_ingredients, use previous_recipe to add ore)
+  - remove furnace output when full (full_output)
+  - remove "coal" drill fuel when above full (full_output)
+
+
+Golems are stupid creatures that do mundane tasks that the character does.
+It is an early game help.
+
+Tasks:
+  - add fuel (coal/wood only) to
+    - "stone-furnace"
+    - "steel-furnace"
+    - "boiler" (higher priority)
+    - "burner-mining-drill"
+    - "burner-inserter"
+  - remove excess fuel from "burner-mining-drill"
+    - allows the drill circle
+  - remove output from "stone-furnace" and "steel-furnace"
+  - bring excess output to character
+  - drop non-fuel items in a "golem-chest"
+
+Golem Properties
+  - has a "reach distance" equal to the default player (no tech, no mods)
+  - will take from and give to player if in range
+  - will take from and give to golem chest if in range
+  - will walk to a golem chest or player to get in range
+  - has an inventory the size of an iron-chest
+  - it will try to maintain two stacks of coal
+    - excess is given to a nearby player or deposited in a golem chest
+
+Golem Marker (optional):
+  - A non-colliding pole that gives a golem a work area.
+  - a golem will wander between any markers that are within range of each other when idle
+
+Golem Chest (basic logistics, optional):
+  - provider
+    - anything in this chest will be remove (low priority)
+    - preferred source for items
+  - storage
+    - dump excess inventory here
+  - requester
+    - asks for a certain number of items - golem will try to satisfy
+
+Golem Controller:
+  - the golem controller maintains a list of jobs (and location)
+    - service entity (add / remove fuel, remove output)
+    - build ghost
+    - provide materials (request chest)
+
+When idle, a golem will grab the first job.
+If there are no jobs, it will wait for a fixed amount of time at the current location.
+If the wait time expires with no job, it will travel to a nearby golem marker that is hasn't visited recently.
+The wait time resets when it tries to go to a marker.
+If there are no golem markers that it hasn't visited, it clears its list.
+
+jobs:
+  - service entity
+    - move to entity location with a range set to the 'reach'
+
+["stone-furnace"]       = { min_fuel = 5, min_out = 1, max_out = 10 },
+  ["steel-furnace"]       = { min_fuel = 5, min_out = 1, max_out = 10 },
+  ["boiler"]              = { min_fuel = 20 },
+  ["burner-mining-drill"] = { min_fuel = 5, max_fuel = 20 },
+  ["burner-inserter"]     = { min_fuel = 5 },
+
+
+
+
+
+----------------
+
+Stupid stuff I'm working on...

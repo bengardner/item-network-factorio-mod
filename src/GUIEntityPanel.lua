@@ -13,17 +13,17 @@ local R = require "src.RichText"
 local Storage = require "src.Storage"
 local Util = require "src.Util"
 
-local GUI_CLOSE_EVENT = "arr-entity-panel-close"
-local PRIORITISE_CHECKED_EVENT = "arr-entity-panel-prioritise"
-local CONDITION_ITEM_EVENT = "arr-entity-panel-condition-item"
-local CONDITION_OP_EVENT = "arr-entity-panel-condition-op"
-local CONDITION_VALUE_BUTTON_EVENT = "arr-entity-panel-condition-button"
-local CONDITION_VALUE_CHANGED_EVENT = "arr-entity-panel-condition-value-changed"
-local CONDITION_SURFACE_CHANGED_EVENT = "arr-entity-panel-condition-surface-changed"
-local CONDITION_SURFACE_RESET_EVENT = "arr-entity-panel-condition-surface-reset"
-local FURNACE_RECIPE_EVENT = "arr-entity-panel-furnace-recipe"
-local RETURN_EXCESS_CHECKED_EVENT = "arr-entity-panel-return-excess"
-local SHOW_PRIORITY_GUI_EVENT = "arr-entity-panel-show-priority-gui"
+local GUI_CLOSE_EVENT = "cin-entity-panel-close"
+local PRIORITISE_CHECKED_EVENT = "cin-entity-panel-prioritise"
+local CONDITION_ITEM_EVENT = "cin-entity-panel-condition-item"
+local CONDITION_OP_EVENT = "cin-entity-panel-condition-op"
+local CONDITION_VALUE_BUTTON_EVENT = "cin-entity-panel-condition-button"
+local CONDITION_VALUE_CHANGED_EVENT = "cin-entity-panel-condition-value-changed"
+local CONDITION_SURFACE_CHANGED_EVENT = "cin-entity-panel-condition-surface-changed"
+local CONDITION_SURFACE_RESET_EVENT = "cin-entity-panel-condition-surface-reset"
+local FURNACE_RECIPE_EVENT = "cin-entity-panel-furnace-recipe"
+local RETURN_EXCESS_CHECKED_EVENT = "cin-entity-panel-return-excess"
+local SHOW_PRIORITY_GUI_EVENT = "cin-entity-panel-show-priority-gui"
 
 local EntityTypeGUIAnchors = {
   ["assembling-machine"] = defines.relative_gui_type.assembling_machine_gui,
@@ -198,7 +198,7 @@ local function add_gui_content(window, entity)
       type = "label",
       style = "heading_2_label",
       caption = "Storage source [img=info]",
-      tooltip = "The surface of the storage to use when checking the condition, and reading signals (for [entity=arr-combinator] Auto Resource Combinators)"
+      tooltip = "The surface of the storage to use when checking the condition, and reading signals (for [entity=cin-combinator] Auto Resource Combinators)"
     })
 
     local button = condition_surface_flow.add({
@@ -219,7 +219,7 @@ local function add_gui_content(window, entity)
     })
   end
 
-  if entity.name == "arr-logistic-requester-chest" then
+  if entity.name == "cin-logistic-requester-chest" then
     local sub_frame = add_panel_frame(frame, "Requester Chest")
     frame.add({
       type = "checkbox",
@@ -295,7 +295,7 @@ local function add_gui_content(window, entity)
       local button = label_flow.add({
         type = "sprite-button",
         resize_to_sprite = false,
-        sprite = "arr-logo",
+        sprite = "cin-logo",
         tooltip = "Click to show in the full priority list window",
         tags = {
           event = SHOW_PRIORITY_GUI_EVENT,

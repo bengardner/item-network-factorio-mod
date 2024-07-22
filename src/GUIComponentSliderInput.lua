@@ -3,8 +3,8 @@ local flib_table = require("__flib__/table")
 local Util = require "src.Util"
 local GUIDispatcher = require "src.GUIDispatcher"
 
-local SLIDER_EVENT = "arr-component-slider"
-local INPUT_EVENT = "arr-component-slider-input"
+local SLIDER_EVENT = "cin-component-slider"
+local INPUT_EVENT = "cin-component-slider-input"
 
 local function get_closest_step_index(value, step_values)
   local min_i = 1

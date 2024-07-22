@@ -7,6 +7,9 @@ local clog = require("src.log_console").log
 
 local M = {}
 
+-- this never changes
+local artillery_ammo_cats = { "artillery-shell" }
+
 --[[
   Updates the entity.
   @reutrn GlobalState.UPDATE_STATUS.INVALID or GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
@@ -34,8 +37,34 @@ function M.generic_service(info)
   return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
 end
 
+--[[
+  Updates the entity.
+  @reutrn GlobalState.UPDATE_STATUS.INVALID or GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+]]
+function M.ammo_turret(info)
+  local entity = info.entity
+
+  ServiceEntity.service_reload_ammo_type(entity, entity.get_inventory(defines.inventory.turret_ammo), entity.prototype.attack_parameters.ammo_categories)
+
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+end
+
+function M.artillery_turret(info)
+  local entity = info.entity
+
+  ServiceEntity.service_reload_ammo_type(entity, entity.get_inventory(defines.inventory.artillery_turret_ammo), artillery_ammo_cats)
+
+  return GlobalState.UPDATE_STATUS.UPDATE_PRI_MAX
+end
+
 GlobalState.register_service_task("general-service", {
   service=M.generic_service
+})
+GlobalState.register_service_task("ammo-turret", {
+  service=M.ammo_turret
+})
+GlobalState.register_service_task("artillery-turret", {
+  service=M.artillery_turret
 })
 
 return M

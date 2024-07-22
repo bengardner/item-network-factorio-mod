@@ -161,9 +161,6 @@ function M.service_recipe_inv(info, entity, inv, recipe)
   return is_short
 end
 
--- this never changes
-local artillery_ammo_cats = { "artillery-shell" }
-
 function M.service_reload_ammo_type(entity, inv, ammo_categories)
   -- check inputs that might be bad
   if inv == nil or ammo_categories == nil or #ammo_categories == 0 then

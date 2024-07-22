@@ -1,0 +1,12 @@
+
+Events:
+
+on_built_entity, with entity "entity-ghost" and the real name in entity.ghost_name
+This should be used to trigger a re-scan of the whole map.
+
+
+TODO:
+  - add auto-adjust
+  - add "AUTO" button
+    - checks for inserters targetting the box
+    - checks for inserters pulling from the box

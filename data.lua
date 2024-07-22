@@ -6,6 +6,7 @@ require "src.prototypes.network-chests"
 require "src.prototypes.network-loader"
 require "src.prototypes.network-sensor"
 require "src.prototypes.network-tanks"
+require "src.prototypes.icons"
 
 local M = {}
 

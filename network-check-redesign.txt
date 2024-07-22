@@ -1,0 +1,72 @@
+
+A network check defaults to automatic provider mode.
+
+In automatic mode, it sends everything to the item network.
+It tracks which items it has sent to the network in the last 5 minutes.
+
+The global limit is used to prevent adding too many items.
+
+If a limit is hit (can't deposit an item), then:
+  - a filter slot is created for every item that has passed through the chest in the last 5 minutes
+  - the slots are sorted by the number of items that the item network can accept
+  - the bar is set on the first item can doesn't have room.
+
+For example, say we have a chest that has been supplying iron-ore and copper-ore.
+If no limit has been hit, then we leave the chest as unfiltered with no bar.
+If the item-network can no longer accept iron-ore, then the slot filters are as follows:
+  [1] = copper-ore (can still send to network)
+  [2] = iron-ore (cannot send)
+  [3] = nothing
+
+The bar is set to 2, preventing any iron-ore from being added to the chest OR anything else.
+
+The left-click screen will show something like the following if a limit has not been hit:
+"
+This chest is in automatic provider mode.
+The chest is unlocked and will send all contents to the item network.
+It has recently provided the following:
+  [iron-ore icon]
+  [copper-ore icon]
+"
+Where the icons are the usual rows of icons, sorted by name.
+
+If a limit has been hit, then the text will show:
+"
+This chest is in automatic provider mode.
+It is currently locked due to:
+  [iron-ore]
+It is providing the following:
+  [copper-ore icon]
+  [iron-ore icon]
+"
+
+
+Network Chest Redesign.
+
+- Generic Provider Chest (Bulk)
+  Based on the Logistic Storage Chest
+   - Single filter to restrict what goes into it. (?)
+   - Automatic dump to network if there is room.
+   - Manual bar - no automatic support
+
+- Generic Requestor Chest (Bulk)
+  Based on the Logistic Requester Chest
+   - Requests satisfied from Item Network (also from logistic robots)
+
+
+ * Buffer is same as Requester
+ * Active/Passive provider the same
+
+
+Sensor support for the Item Network
+ Per-item results: 0=no item, 1=below limit, 2=at/above limit
+   Iron Chest: 1000 slots to accommodate lots of items.
+     - set operable=false
+
+Extend the Constant Combinator
+ -
+
+
+
+Network Tank Redesign
+

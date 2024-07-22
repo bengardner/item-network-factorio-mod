@@ -1,6 +1,6 @@
 local GUICommon = {}
---local Util = require "src.Util"
---local Storage = require "src.Storage"
+local Util = require "src.Util"
+local Storage = require "src.Storage"
 
 -- "cin" stands for Cheat Item Network
 GUICommon.GUI_LOGO_BUTTON = "cin-logo-button"

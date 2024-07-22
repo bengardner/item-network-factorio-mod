@@ -1,0 +1,65 @@
+Rules:
+
+Chests have two modes:
+ - unconfigured (provider) chest
+ - configured requester/provider chest
+ 
+Chest have two modes:
+ - unlocked
+ - locked
+
+The mode changes based on the contents of the chest and the network.
+
+Unconfigured provider chest:
+ - provide anything that lands in the chest.
+ - if an item in the chest cannot be provided, then lock the chest
+
+That means that a locked chest will usually contain at least one item.
+
+Unlocked auto-chest:
+ - no slot configuration (filters or bar)
+ - no (artificial) limit to the number of items in the chest
+ - will empty on each service
+
+Locked auto-chest:
+ - one slot for each recent item
+ - those with space are added before those without
+ - bar set on the first slot with no network storage a space
+ - max one stack of each type in the chest
+ - will usually have 1 item in a bar area (won't lock if nothing to send) ??
+
+Configured chest:
+ - take requests specify:
+   - "buffer" - the number of items to keep in the chest (must be > 0)
+     - if the count falls below this, it will try to grab some
+     - if the count is above this, it will try to send to the network. failure to 
+       send for a "take" request will not lock the chest.
+   - "limit" - minimum value in the network
+     - when taking, do not let the resulting network count fall below this value
+       - useful only with "coal" to prevent furnaces from starving boilers
+ - give requests specify:
+   - "buffer" - the number of items to buffer (keep) in the chest (0 is OK)
+     - if the count is above this, it will try to send to the network
+     - if the network has no available space, then the chest is locked
+   - "limit" - only send if the network count is below this. 0=use global limit.
+     - mostly useless
+
+Unlocked chest:
+ - no slot filters
+ - no bar
+ - items appear in any order
+ 
+Locked chest:
+ - "take" items are first with enough filtered slots to hold max("buffer", count) items.
+   - there might be a window where count > buffer (just reduced the request, no room in net)
+ - "give" items with net space available are next, with enough filtered 
+    slots to hold "buffer" items. (count will be 0)
+ - "give" items without net space are next, with enough filtered slots to hold "count" items.
+ - the bar is set at the start of the 3rd group.
+
+
+Chests are locked if an attempt to send an item to the network (give) failed.
+They are unlocked if there were no failures.
+For example, increasing the global limit could unlock a chest.
+
+May want a different icon for a locked chest (a red light on top?)

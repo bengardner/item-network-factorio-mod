@@ -8,6 +8,8 @@ local EntityService          = require("src.EntityService")
 local constants = require "src.constants"
 local clog = require("src.log_console").log
 local Event = require('__stdlib__/stdlib/event/event')
+local DomainStore = require "src.DomainStore"
+local Storage = require "src.Storage"
 
 local M = {}
 
@@ -25,6 +27,10 @@ function M.setup()
     return
   end
   log("Running GlobalState.setup()")
+
+  DomainStore.initialise()
+  Storage.initialise()
+
   setup_has_run = true
   M.reread_settings()
 
@@ -129,6 +135,10 @@ function M.inner_setup()
       items = {},
       item_limits = {}
     }
+  end
+
+  if global.forces == nil then
+    global.forces = {}
   end
 
   -- create the table for entity_info
@@ -1038,6 +1048,7 @@ M.UPDATE_STATUS = {
 }
 
 -- translate a tile name to the item name ("stone-path" => "stone-brick")
+-- REVISIT: use the "placeable_by" field in the prototype to get the requirements
 function M.resolve_name(name)
   if game.item_prototypes[name] ~= nil or game.fluid_prototypes[name] ~= nil then
     return name

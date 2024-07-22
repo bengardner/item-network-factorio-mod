@@ -1,5 +1,7 @@
 if script.active_mods["gvv"] then require("__gvv__.gvv")() end
 
+log("CONTROL")
+
 -- declare global 'clog'
 clog = require("src.log_console").log
 
@@ -32,3 +34,7 @@ require "src.cheat_production_supply"
 require "src.remote_interface"
 
 require "src.my_entity_gui"
+
+require "src.GUIModButton"
+
+-- require "src.log_all_events"

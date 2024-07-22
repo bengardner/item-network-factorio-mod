@@ -1,0 +1,26 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../dl/stdlib_1.4.8"
+		}
+	],
+  "settings": {
+    "factorio.versions": [
+      {
+        "name": "1.1",
+        "factorioPath": "/home/bng/games/factorio/bin/x64/factorio",
+        "active": true
+      }
+    ],
+    "Lua.workspace.library": [
+      "/home/bng/games/factorio/data"
+    ],
+    "Lua.workspace.userThirdParty": [
+      "/home/bng/.config/Code/User/workspaceStorage/ec57aaf7d4cdd740b189f34af41c42da/justarandomgeek.factoriomod-debug/sumneko-3rd"
+    ],
+    "Lua.workspace.checkThirdParty": "ApplyInMemory"
+  }
+}

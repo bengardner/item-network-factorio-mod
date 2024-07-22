@@ -98,6 +98,35 @@ function M.calculate_groups()
 end
 ]]
 
+local function discard_service(name_to_service, service_name)
+  local changed = false
+  for k, v in pairs(name_to_service) do
+    if v == service_name then
+      name_to_service[k] = nil
+      changed = true
+    end
+  end
+  return changed
+end
+
+-- used to remove stuff we don't service
+local setting_to_service_name = {
+  { setting = "item-network-service-assembler", service = "assembling-machine" },
+  { setting = "item-network-service-furnace", service = "furnace" },
+  { setting = "item-network-service-lab", service = "lab" },
+  { setting = "item-network-service-silo", service = "rocket-silo" },
+  { setting = "item-network-service-turret", service = "ammo-turret" },
+  { setting = "item-network-service-turret", service = "artillery-turret" },
+
+  { setting = "item-network-service-logistic-chest", service = "logistic-chest-active-provider" },
+  { setting = "item-network-service-logistic-chest", service = "logistic-chest-buffer" },
+  { setting = "item-network-service-logistic-chest", service = "logistic-chest-passive-provider" },
+  { setting = "item-network-service-logistic-chest", service = "logistic-chest-requester" },
+  { setting = "item-network-service-logistic-chest", service = "logistic-chest-storage" },
+
+  { setting = "item-network-service-car", service = "car" },
+}
+
 --[[
 Scan prototypes and calculate a mapping of entity.name to service name.
 ]]
@@ -118,8 +147,8 @@ function M.scan_prototypes()
   -- type to service mappings
   -- key=type, val=service_type
   local etype_to_service = {
-    ["ammo-turret"]        = "general-service", -- "ammo-turret",
-    ["artillery-turret"]   = "general-service", -- "artillery-turret",
+    ["ammo-turret"]        = "ammo-turret",
+    ["artillery-turret"]   = "artillery-turret",
     ["assembling-machine"] = "assembling-machine",
     ["car"]                = "car",
     ["entity-ghost"]       = "entity-ghost",
@@ -167,6 +196,22 @@ function M.scan_prototypes()
   end
   log(("Servicing %s prototypes"):format(table_size(name_to_service)))
   log(serpent.block(name_to_service))
+
+  -- remove stuff disabled by settings
+  local altered = false
+  for _, s2s in ipairs(setting_to_service_name) do
+    if not settings.global[s2s.setting].value then
+      if discard_service(name_to_service, s2s.service) then
+        altered = true
+      end
+    end
+  end
+
+  if altered then
+    log(("FILTERED: Servicing %s prototypes"):format(table_size(name_to_service)))
+    log(serpent.block(name_to_service))
+  end
+
   return name_to_service
 end
 

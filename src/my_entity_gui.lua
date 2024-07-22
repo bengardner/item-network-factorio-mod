@@ -234,7 +234,7 @@ local function add_gui_content(window, entity, info)
       type = "label",
       style = "heading_2_label",
       caption = "Storage source [img=info]",
-      tooltip = "The surface of the storage to use when checking the condition, and reading signals (for [entity=arr-combinator] Auto Resource Combinators)"
+      tooltip = "The surface of the storage to use when checking the condition, and reading signals (for [entity=cin-combinator] Auto Resource Combinators)"
     })
 
     local button = condition_surface_flow.add({
@@ -255,7 +255,7 @@ local function add_gui_content(window, entity, info)
     })
   end
 
-  if entity.name == "arr-logistic-requester-chest" then
+  if entity.name == "cin-logistic-requester-chest" then
     local sub_frame = add_panel_frame(frame, "Requester Chest")
     frame.add({
       type = "checkbox",
@@ -332,7 +332,7 @@ local function add_gui_content(window, entity, info)
       local button = label_flow.add({
         type = "sprite-button",
         resize_to_sprite = false,
-        sprite = "arr-logo",
+        sprite = "cin-logo",
         tooltip = "Click to show in the full priority list window",
         tags = {
           event = SHOW_PRIORITY_GUI_EVENT,

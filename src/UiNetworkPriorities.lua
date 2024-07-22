@@ -3,9 +3,6 @@ Allows configuration of allowable fuels.
 ]]
 local GlobalState = require "src.GlobalState"
 local UiConstants = require "src.UiConstants"
-local GUICommon = require "src.GUICommon"
-local GUIDispatcher = require "src.GUIDispatcher"
-local R = require "src.RichText"
 local Gui = require('__stdlib__/stdlib/event/gui')
 local item_utils = require "src.item_utils"
 local clog = require("src.log_console").log
@@ -13,21 +10,17 @@ local clog = require("src.log_console").log
 -- M is the module that supplies 'create()'
 local M = {}
 
-local BUTTON_CLICK_EVENT = "cin-component-priority-set-button"
-local SLIDER_INPUT_EVENT = "cin-component-priority-set-slider"
-
 local NetFuels = {}
 
-
 local NetFuels__metatable = { __index = NetFuels }
-script.register_metatable("NetFuels", NetFuels__metatable)
+script.register_metatable("NetPriorities", NetFuels__metatable)
 
 local function gui_get(player_index)
-  return GlobalState.get_ui_state(player_index).UiNetworkFuels
+  return GlobalState.get_ui_state(player_index).UiNetworkPriorities
 end
 
 local function gui_set(player_index, value)
-  GlobalState.get_ui_state(player_index).UiNetworkFuels = value
+  GlobalState.get_ui_state(player_index).UiNetworkPriorities = value
 end
 
 function M.create(parent, player, show_title)
@@ -112,20 +105,19 @@ local function get_list_of_items()
           table.insert(fuel_rec, fuel)
         end
       end
+      --log(("%s: %s"):format(name, serpent.line(fuel_rec)))
       if #fuel_rec > 0 then
         fuel_items[name] = fuel_rec
       end
     end
   end
 
-  --[[
   for name, ii in pairs(fuel_items) do
     print(string.format("fuel for %s [%s]", name, #ii))
     for _, xx in ipairs(ii) do
       print(string.format("  - %s", serpent.line(xx)))
     end
   end
-  ]]
 
   return fuel_items
 end
@@ -172,11 +164,11 @@ function NetFuels:refresh()
   })
   item_table.add({
     type = "label",
-    caption = "Copy",
+    caption = "Best",
   })
   item_table.add({
     type = "label",
-    caption = "Fuels",
+    caption = "Forbidden Fuels (red)",
   })
 
   -- add the items
@@ -194,11 +186,6 @@ function NetFuels:refresh()
       ent_elem.elem_value = name
       ent_elem.locked = true
 
-      item_table.add({
-        type = "label",
-        caption = "*",
-      })
-      --[[
       -- add the preferred fuel selector
       local f_elem = item_table.add({
         type = "choose-elem-button",
@@ -210,7 +197,6 @@ function NetFuels:refresh()
         f_elem.elem_value = cfg.preferred
       end
       f_elem.elem_filters = get_fuel_filter_for_entity(name)
-      ]]
 
       -- add the forbidden fuel list
       local hflow = item_table.add({ type="flow", direction = "horizontal" })
@@ -230,40 +216,6 @@ function NetFuels:refresh()
         })
         fuel_elem.elem_value = fuel.name
         fuel_elem.locked = true
-
-        local count = 1
-        if cfg[fuel.name] == true  then
-          count = 0
-        end
-        GUICommon.create_item_button(
-          hflow,
-          fuel.name,
-          {
-            number = count > 0 and count or 0,
-            name = fuel.name,
-            style = count > 0 and "logistic_slot_button" or "red_logistic_slot_button",
-            elem_tooltip = true,
-            tooltip = table.concat({
-              R.HINT, "Right-click", R.HINT_END, " to blacklist.\n",
-              R.HINT, "Shift + Left-click", R.HINT_END, " to move forwards.\n",
-              R.HINT, "Shift + Right-click", R.HINT_END, " to move backwards.\n",
-              R.HINT, "Control + Left-click", R.HINT_END, " to move to front.\n",
-              R.HINT, "Control + Right-click", R.HINT_END, " to move to back.",
-            }),
-            tags = { event = BUTTON_CLICK_EVENT },
-          }
-        )
-
-        --[[
-        hflow.add({
-          name = fuel,
-          type = "sprite-button",
-          style = "logistic_slot_button",
-          sprite = "item/" .. fuel,
-          elem_tooltip = { type = "item", name = fuel },
-        })
-        ]]
-
         cnt = cnt + 1
       end
     end
@@ -312,63 +264,7 @@ local function on_fuel_blocked(event)
   end
 end
 
-local function on_button_click(event, tags, player)
-  log(("%s %s"):format(event.element.name, serpent.line(event)))
-  if true then
-    return
-  end
-  local click_str = GUICommon.get_click_str(event)
-  local table_elem = event.element.parent
-  local domain_key = table_elem.tags.domain
-  local priority_sets = ItemPriorityManager.get_priority_sets_for_domain(domain_key)
-  local set_key = table_elem.tags.key
-  local priority_set = priority_sets[set_key]
-  local clicked_item_name = event.element.name
-  local clicked_item_index = flib_table.find(priority_set.item_order, clicked_item_name)
-  local clicked_item_count = priority_set.item_counts[clicked_item_name]
-  local updated = false
-
-  if click_str == "left" then
-    local slider_flow = table_elem.parent.parent.slider_flow
-    local selected_item = slider_flow.tags.item
-    if selected_item == clicked_item_name then
-      slider_flow.tags = {}
-    elseif clicked_item_count > 0 then
-      slider_flow.tags = {
-        domain = domain_key,
-        key = set_key,
-        item = clicked_item_name,
-      }
-    end
-    updated = true
-  end
-
-  if click_str == "right" then
-    -- toggle blacklist
-    priority_set.item_counts[clicked_item_name] = clicked_item_count == 0 and 1 or -clicked_item_count
-    updated = true
-  elseif click_str == "control-left" then
-    -- move to front
-    updated = array_move_item(priority_set.item_order, clicked_item_index, 1)
-  elseif click_str == "control-right" then
-    -- move to back
-    updated = array_move_item(priority_set.item_order, clicked_item_index, -1)
-  elseif click_str == "shift-left" then
-    -- swap left
-    updated = table_swap(priority_set.item_order, clicked_item_index, clicked_item_index - 1)
-  elseif click_str == "shift-right" then
-    -- swap right
-    updated = table_swap(priority_set.item_order, clicked_item_index, clicked_item_index + 1)
-  end
-
-  if updated then
-    update_components(table_elem, priority_sets, true)
-  end
-end
-
 Gui.on_elem_changed(UiConstants.NETFUEL_SELECT_ITEM, on_fuel_item_elem_changed)
 Gui.on_click(UiConstants.NETFUEL_BLOCK_ITEM, on_fuel_blocked)
-
-GUIDispatcher.register(defines.events.on_gui_click, BUTTON_CLICK_EVENT, on_button_click)
 
 return M

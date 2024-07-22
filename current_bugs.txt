@@ -1,0 +1,239 @@
+This is my TODO list.
+
+Next step:
+ - Add a button at the top-left (done-ish)
+ - pull in the fuel and ammo pri from Auto Resource Redux in the popup menu
+  - looks like a 'controller' type thing included in multiple places
+- copy over the slider stuff & toggle function
+
+
+Forces:
+  - relocate the item/fluid counts under a force name.
+  - relayout globals -- the 'mod' table isn't needed
+  global = {
+    -- cache of some configuration items
+    config = {
+      [config_name] = value,
+      infinite_supply = false,
+    }
+
+    -- per-force data
+    forces[force_name] = {
+      -- per-force config
+      config = {
+        [config_name] = value,
+        infinite_supply = false,
+      },
+      items = { name = count },
+      item_limits = { name = count },
+      -- whether an item can be made by the force (science-packs)
+      item_enabled = { [item_name] = boolean }
+      fluids = { name = { temperature = amount } },
+      fluid_limits = { name = { temperature = amount } },
+      fuel_priorities = {
+        -- array of fuel name and amount, in order of preference
+        [entity_name] = { { name, amount }, .. }
+      },
+      -- items that were not available to an entity (to track down who wants what)
+      missing_items = {
+        [item_name] = {
+          -- do we need to keep a ref to the entity?
+          [entity.unit_number] = { tick, count, entity }
+        }
+      },
+      -- fluids that were not available to an entity
+      missing_fluid = {
+        -- single temperature (where min==max)
+        [water@15000] = {
+          [unit_number] = { tick, amount, entity },
+        }
+        -- range of temperatures
+        [steam@165000:500000] = {
+          [unit_number] = { tick, amount },
+        }
+        -- no temperature where min=-inf, max=inf
+        [water] = {
+          [unit_number] = { tick, amount, entity },
+        }
+      },
+      -- to keep track of alerts (needed for repair packs?)
+      alert_trans = {
+        -- TODO: look up the data we store
+      }
+    }
+
+    -- per-player data
+    player_data[player_index] = {
+      -- per-player config
+      config = {
+        [option] = value,
+      }
+      -- per-player UI
+      ui = { ... }
+    }
+
+    -- per-entity data (only track entities with a unit_number)
+    entity_data = {
+      [unit_number] = {
+        entity = entity,
+        priority = number,
+        tick_last = tick at last service,
+        ...
+        -- config that gets copied
+        config = {
+          -- recipe for assemblers and furnaces
+          recipe = "",
+          -- requests for chests
+          requests = {
+            [item_name] = amount,
+          }
+          -- requests for pipe
+          requests = {
+            -- amount and optional min/max/exact temp. grabs any temp is left off.
+            [fluid_name] = { amount=123, min_temperature=X, max_temperature=X, temperature=X }
+          }
+          -- whether this can grab from reserve
+          priority = bool,
+        }
+      }
+    }
+    -- scheduler for entities
+    service_queue = {
+      scan_deadline = ticks,
+      scan_index = 1 .. constants.QUEUE_COUNT,
+      scan_queues[constants.QUEUE_COUNT] = {
+        [unit_number] = data -- save a lookup on entities
+      }
+    }
+
+    -- maps an entity name to a service routine name
+    name_service_map = {
+      [entity_name] = service_name
+    }
+
+    -- cache of stuff that is flushed when the prototypes change
+    cache = {
+      -- REVISIT: this doesn't look right
+      -- key=ingredient_name, val=list of recipes that use the ingredient
+      furnace_inputs = {
+        [furnace_name] = {
+          [item_name] = { recipe_name, ... },
+        }
+      }
+      -- important items mapped to the recipe that creates them.
+      -- For science packs and furnace outputs.
+      -- Populated as needed.
+      -- key=product_name, val=list of recipe names that create it
+      item_recipes = {
+        [item_name] = { recipe_name, ... },
+      }
+    }
+
+    -- this is regenerated at startup and is hard-coded
+    service_tasks = {
+      [service_name] = {
+        service = function,
+        create = function,
+        clone = function,
+        tag = string,
+        refresh_tags = function,
+        paste = function,
+      }
+    }
+
+    -- list of stuff that could be upgraded
+    -- these items may not be managed
+    upgrades = {
+      [unit_number] = ( entity, tick, player_index )
+    }
+    -- list of stuff to mine after a while
+    -- may revisit and use a circular queue of tables.
+    -- like the scheduler, only a certain number are processed per tick.
+    mine_queue = {
+      [unit_number] = { entity, tick, player },
+      [-seqnum] = { entity, tick, player },
+    }
+    mine_seqnum = number,
+
+    -- TODO
+    sensors = {}
+  }
+
+Maybe rework fluid limits to ignore temperature.
+The limit applies to ALL temperatures.
+
+Settings:
+  - Always do two chest types and two tank types.
+  - Option: personal logistics
+  - Option: logistic chests
+  - Option: alert/shortages
+  - Option: furnace fuel, ingredients, output
+  - Option: assembler fuel, ingredients, output
+  - Option: car fuel, ammo
+  - Option: car logistics
+  - Option: spidertron logistics, ammo
+  - Option: supply labs
+  - Option: auto-build ghosts
+  - Option: auto-destroy
+  - Option: use cliff explosives
+    -- added a bunch of settings. need to implement.
+
+
+Furnace:
+  - paste recipe (steel) on active copper
+  - no iron plates available
+  - continues copper (?)
+  - probably something with reading 'previous recipe'
+    - now only read info.ore_name and source content. No recipe.
+    - maybe if no ore_name and no input, go off what is in the output?
+  - Adapt the 'assembler' logic to populate the input ingredients and fuel
+    - Done. Timing works.
+  - Assembler:  increase priority if the output was full and able to move everything to the network
+
+Tank GUI
+  - "network-tank-requester" should not show request/provide selectors
+    - fixed?
+
+Network GUI
+  - Remember the 'group' setting per-player
+  - Set preferred fuel (default coal or processed_fuel)
+    [ENT] [BEST] [all ...]
+    Click on BEST does a selector for the fuel.
+    Click on an [all] toggles whether it is allowed (RED?)
+
+Side GUI (future)
+  - Add a button for customizing behavior, allow copy/paste
+    - See even distribution for side-button example
+    - Enabled (default true) - whether the entity should be serviced at all
+    - Preferred fuel (copy/pastable)
+    - Preferred Ammo (copy/pastable)
+    - Automatic mode (assembler and furnace - default false)
+      - clear recipe when output full and network is full
+      - pick recipe based on shortages AND available resources
+      - need to make sure pipes are connected (direct-connect provider only)
+
+Data:
+  - Move all config data into info.config
+    - tank requester
+      - auto mode (default true: not set manually)
+      - request fluid
+      - request temperature min/max
+      - request amount (level)
+      - request limit
+    - tank provider
+      - no config
+    - chest provider
+      - no config
+    - chest requester
+      - request list
+        - item name
+        - item amount
+    - assembler
+      - auto_mode
+      - ? preferred fuel (default: use global)
+    - furnace
+      - auto_mode
+      - ore_name
+      - ? preferred fuel (default: use global)
+
+  - Move all state data (not copied) into info.state

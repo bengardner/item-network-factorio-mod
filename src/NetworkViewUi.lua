@@ -7,6 +7,7 @@ local UiNetworkFluid = require "src.UiNetworkFluid"
 local UiNetworkLimits = require "src.UiNetworkLimits"
 local UiNetworkShortages = require "src.UiNetworkShortages"
 local UiNetworkFuels = require "src.UiNetworkFuels"
+local UiNetworkPriorities = require "src.UiNetworkPriorities"
 local clog = require("src.log_console").log
 
 local M = {}
@@ -175,6 +176,7 @@ function M.open_main_frame(player_index)
   add_tab("Shortages", UiNetworkShortages)
   add_tab("Limits", UiNetworkLimits)
   add_tab("Fuels", UiNetworkFuels)
+  add_tab("Priorities", UiNetworkPriorities)
 
   -- select "items" (not really needed, as that is the default)
   tabbed_pane.selected_tab_index = 1

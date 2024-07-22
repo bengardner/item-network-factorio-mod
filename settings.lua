@@ -60,6 +60,7 @@ function M.main()
       default_value = true,
       order = "021",
     },
+
     {
       -- refuel anything that has a burner
       name = "item-network-service-fuel",
@@ -124,6 +125,15 @@ function M.main()
       default_value = true,
       order = "035",
     },
+    {
+      -- add ingredients and fuel, remove output
+      name = "item-network-service-car",
+      type = "bool-setting",
+      setting_type = "runtime-global",
+      default_value = true,
+      order = "036",
+    },
+
     {
       -- the number of entities to process per tick
       name = "item-network-config-entities-per-tick",

@@ -422,6 +422,10 @@ local function dump_resources()
 end
 
 Event.on_event("debug-network-item", function (event)
+    GlobalState.scan_surfaces(nil)
+    if true then
+      return
+    end
     --GlobalState.log_queue_info()
     -- log_ammo_stuff()
     --[[ player_index, input_name, cursor_position, ]]
@@ -475,6 +479,11 @@ local function update_player_selected(player)
   end
 
   if info == nil then
+    return
+  end
+
+  local svc = GlobalState.get_service_type_for_entity(ent.name)
+  if not svc then
     return
   end
 
@@ -804,7 +813,7 @@ local function update_player_selected(player)
     end
   end
 
-  if false and ent.type == "furnace" then
+  if ent.type == "furnace" then
     local recipe = ent.previous_recipe
     if recipe ~= nil then
       print(string.format("furnace: %s e=%s s=%s recipe=%s energy=%s ing=%s pro=%s",
@@ -837,8 +846,6 @@ local function my_on_gui_closed(event)
     GlobalState.assembler_check_recipe(entity)
   end
 end
-
--- Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
 Event.on_event(defines.events.on_gui_closed, my_on_gui_closed)
 
 local function my_on_gui_opened(event)
@@ -856,43 +863,50 @@ local function my_on_gui_opened(event)
     return
   end
   local entity = event.entity
-  if event.gui_type == defines.gui_type.entity and entity ~= nil then
+  if event.gui_type == defines.gui_type.entity and entity ~= nil and entity.type == "furnace" then
     print(string.format("on_gui_open: type=%s name=%s unum=%s", event.gui_type, entity.name, entity.unit_number))
     global.test_gui = player.gui.relative.add({
-      --type = "sprite-button",
       type = "frame",
-      name = "itemnet-frame",
-      --sprite = "item/locomotive",
+      style = "inset_frame_container_frame",
       anchor = {
         gui      = defines.relative_gui_type.furnace_gui,
-        --gui      = defines.relative_gui_type.additional_entity_info_gui,
         position = defines.relative_gui_position.right,
       },
     })
-    global.test_gui.add({
+    local vflow = global.test_gui.add({
+      type = "flow",
+      direction = "vertical",
+    })
+    local hflow = vflow.add({
+      type = "flow",
+      direction = "horizontal",
+    })
+
+    hflow.add({
       type = "label",
       caption = "Pick The Recipe",
+      style = "frame_title",
     })
-    global.test_gui.add({
+    vflow.add({
       type = "sprite-button",
       sprite = "item/locomotive",
     })
-    local ef = {
-      { filter="has-product-item" },
-      { mode = "and", filter = "category", category = "smelting" },
-    }
-    global.test_gui.add({
+    -- the category should be taken from the furnace categories
+    local ef = {}
+    local mode
+    for cc, _ in pairs(entity.prototype.crafting_categories) do
+      table.insert(ef, { mode = mode, filter = "category", category = cc })
+      mode = "or"
+    end
+    table.insert(ef, { mode = "and", filter="has-product-item" })
+    table.insert(ef, { mode = "and", filter="hidden", invert=true })
+    vflow.add({
       type = "choose-elem-button",
       elem_type = "recipe",
-      recipe = "sand",
       elem_filters = ef,
     })
-    for k, v in pairs(game.recipe_prototypes) do
-      print(string.format("%s : cat=%s", k, v.category))
-    end
   end
 end
-Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
-
+-- Event.on_event(defines.events.on_gui_opened, my_on_gui_opened)
 
 return M

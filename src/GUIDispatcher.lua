@@ -7,9 +7,9 @@ local table = require('__stdlib__/stdlib/utils/table')
 
 local GUIDispatcher = {}
 
-GUIDispatcher.ON_CONFIRM_KEYPRESS = "arr-gui-confirm"
-GUIDispatcher.ON_COPY_SETTINGS_KEYPRESS = "arr-copy-entity-settings"
-GUIDispatcher.ON_COPY_CONDITIONS_KEYPRESS = "arr-copy-entity-conditions"
+GUIDispatcher.ON_CONFIRM_KEYPRESS = "cin-gui-confirm"
+GUIDispatcher.ON_COPY_SETTINGS_KEYPRESS = "cin-copy-entity-settings"
+GUIDispatcher.ON_COPY_CONDITIONS_KEYPRESS = "cin-copy-entity-conditions"
 
 -- REVISIT: don't add stuff until register is called?
 -- { on_click = { event_tag = fn, ... }, ... }
